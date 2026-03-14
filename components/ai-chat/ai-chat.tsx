@@ -72,20 +72,24 @@ function sanitizeAIText(text: string) {
     .replace(/on\w+\s*=\s*["'][^"']*["']/gi, "");
 }
 
-function stripCodeBlocks(text: string) {
+function stripCodeBlocks(text: string): string {
   return text
-    .replace(/```[\w+\-]*(?:\s+path=[^\n]+)?[\n][\s\S]*?```/g, "")
-    .replace(/```[\w+\-]*\n[\s\S]*?```/g, "")
-    .replace(/^\s*[\n]/gm, "\n")
+    // Fenced blocks with a language tag and/or path attribute before the newline
+    .replace(/```[^\n`]*\n[\s\S]*?```/g, "")
+    // Fenced blocks with no language tag (opening fence directly followed by content)
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-function sanitizeAssistantMessage(text: string) {
-  return sanitizeAIText(stripCodeBlocks(text))
-    .replace(/^\s*files:\s*$/gim, "")
-    .replace(/^\s*-\s+.+$/gim, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+function sanitizeAssistantMessage(text: string): string {
+  let cleaned = stripCodeBlocks(text);
+  // Strip raw JSON blobs (workspace plans returned without fences)
+  cleaned = cleaned.replace(/\{\s*"(?:folders|files|deletedFiles)[\s\S]*?\}/g, "");
+  cleaned = sanitizeAIText(cleaned);
+  // Remove leftover artefact headers
+  cleaned = cleaned.replace(/^\s*files:\s*$/gim, "");
+  return cleaned.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function normalizeAssistantPath(rawPath: string): string {
@@ -435,17 +439,13 @@ export function AIChat({
       const workspaceIntent = /\b(folder|folders|file|files|project|scaffold|structure|setup|create|edit|build|make|write|generate|add|implement)\b/i.test(input);
       const pushDeployIntent = /\b(push|commit|deploy|redeploy|publish|ship)\b/i.test(input);
       const codeInstruction = [
-        "CRITICAL OUTPUT FORMAT:",
-        "1. ALWAYS start with a short plain-text description (1-3 sentences) stating: which file(s) you are creating/editing and what the code does. This description is the ONLY thing shown in chat.",
-        "2. Place ALL code inside fenced code blocks (``` ``` ) — code blocks are applied directly to the editor and are NEVER shown to the user in chat.",
-        "3. Never repeat code as prose. Never explain code line-by-line in the description. Do not include JSON, markdown lists of code, or fenced blocks in the description.",
-        "4. Format multi-file or scaffold requests as a SINGLE fenced ```json block: {\"folders\":[\"/path\"],\"files\":[{\"path\":\"/file\",\"content\":\"...\"}],\"deletedFiles\":[\"/old-file\"]}",
-        "5. Example of correct output format:",
-        "  Created `src/Button.tsx` — a reusable button component with primary/secondary variants.",
-        "  ```tsx",
-        "  export function Button() { ... }",
-        "  ```",
-        "6. Include valid, clean absolute file paths (no markdown symbols) and ensure scaffold output is preview-ready (include the required entry files for preview).",
+        "STRICT OUTPUT RULES — follow exactly, no exceptions:",
+        "1. Begin your reply with 1-2 plain-English sentences ONLY. State which file(s) you are creating or editing and briefly what they do. These sentences must contain NO code, NO JSON, NO backticks, NO markdown fences.",
+        "2. All code MUST be placed inside fenced code blocks. NEVER write code, file contents, or JSON as plain prose text.",
+        "3. For multi-file / scaffold requests: place all files in ONE fenced ```json block with this exact shape:",
+        '   {"folders":["/src"],"files":[{"path":"/index.html","content":"full content"}],"deletedFiles":[]}',
+        "4. For a single-file edit: use ONE fenced code block with the correct language tag (e.g. ```tsx).",
+        "5. Paths must be absolute (start with /). Provide COMPLETE file contents, not snippets. Output must be preview-ready (always include an index.html entry file).",
       ].join("\n");
       const optimizedMessage = workspaceIntent
         ? `${input}\n\n${codeInstruction}\n\nReturn ONLY one JSON code block in the exact shape above. Start with a one-sentence description of what you are scaffolding, then the JSON block.`
@@ -730,7 +730,9 @@ export function AIChat({
   };
 
   const renderMessageContent = (content: string) => {
-    return sanitizeAIText(content)
+    // Double-safety: strip code blocks before rendering (catches legacy stored messages)
+    const safe = sanitizeAIText(stripCodeBlocks(content));
+    return safe
       .split(/\n{2,}/)
       .filter(Boolean)
       .map((part, index) => (
@@ -962,9 +964,6 @@ export function AIChat({
                 )}
               >
                 {(() => {
-                  const singleCodeBlock = message.role === "assistant" ? extractCodeBlock(message.content) : null;
-                  const multiFileEdits = message.role === "assistant" ? extractMultiFileEdits(message.content) : [];
-
                   return (
                     <>
                 {message.context && message.context.length > 0 && (

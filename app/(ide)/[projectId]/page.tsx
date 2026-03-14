@@ -991,7 +991,8 @@ export default function IDEPage() {
       const targetPath = pickDefaultFilePath(language);
       createOrUpdateFile(targetPath, code);
       setActiveTab("preview");
-      setPreviewMode("editor");
+      setPreviewMode("app");
+      setPreviewRefreshSignal((n) => n + 1);
       setTerminalOutput((prev) => [...prev, `[AI created and applied code to ${normalizePath(targetPath)}]`]);
       return [normalizePath(targetPath)];
     }
@@ -1000,7 +1001,8 @@ export default function IDEPage() {
     setFileContent(code);
     fileContentsRef.current[selectedFile] = code;
     setActiveTab("preview");
-    setPreviewMode("editor");
+    setPreviewMode("app");
+    setPreviewRefreshSignal((n) => n + 1);
     setTerminalOutput((prev) => [...prev, `[AI applied code to ${selectedFile}]`]);
     return [selectedFile];
   };
@@ -1020,7 +1022,8 @@ export default function IDEPage() {
     setSelectedFile(firstFile);
     setFileContent(fileContentsRef.current[firstFile] || "");
     setActiveTab("preview");
-    setPreviewMode("editor");
+    setPreviewMode("app");
+    setPreviewRefreshSignal((n) => n + 1);
     setTerminalOutput((prev) => [...prev, `[AI auto-applied ${edits.length} files to editor]`]);
     return edits.map((edit) => normalizePath(edit.filePath));
   };
@@ -1065,7 +1068,8 @@ export default function IDEPage() {
     }
 
     setActiveTab("preview");
-    setPreviewMode("editor");
+    setPreviewMode("app");
+    setPreviewRefreshSignal((n) => n + 1);
     setTerminalOutput((prev) => [...prev, `[AI applied workspace plan: ${folders.length} folder(s), ${planFiles.length} file(s), ${deletedFiles.length} deletion(s)]`]);
     return [
       ...folders.map((folderPath) => `📁 ${normalizePath(folderPath)}`),
