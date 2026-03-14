@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { FileExplorer } from "@/components/file-explorer/file-explorer";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { TerminalComponent } from "@/components/terminal/terminal";
@@ -85,6 +85,9 @@ const initialFiles: FileItem[] = [];
 export default function IDEPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const params = useParams();
+  const projectId = typeof params?.projectId === "string" ? params.projectId : "default";
+  const storageKeyRef = useRef(`neoforge-ws-${projectId}`);
   const repository = searchParams.get("repo") || "";
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState("");
@@ -449,6 +452,53 @@ export default function IDEPage() {
     setShowMultiFilePreview(false);
   }, [createOrUpdateFile, multiFileDrafts]);
 
+  // ── Restore workspace from localStorage on mount ───────────────────────
+  const hasRestoredRef = useRef(false);
+  useEffect(() => {
+    hasRestoredRef.current = true;
+    const key = storageKeyRef.current;
+    try {
+      const saved = localStorage.getItem(key);
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as {
+        files: FileItem[];
+        fileContents: Record<string, string>;
+        selectedFile: string | null;
+      };
+      if (!parsed?.files?.length || !parsed?.fileContents) return;
+      const contents = parsed.fileContents;
+      setFiles(parsed.files);
+      fileContentsRef.current = contents;
+      repoBaselineRef.current = { ...contents };
+      const sel =
+        parsed.selectedFile && contents[parsed.selectedFile] !== undefined
+          ? parsed.selectedFile
+          : Object.keys(contents)[0] || null;
+      setSelectedFile(sel);
+      setFileContent(sel ? contents[sel] || "" : "");
+      // Prevent the GitHub repo-load effect from overwriting local edits
+      if (repository) loadedRepositoryRef.current = repository;
+    } catch {
+      // Corrupt data — ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Auto-save workspace to localStorage on file-tree changes ─────────────
+  useEffect(() => {
+    if (!hasRestoredRef.current) return;
+    if (files.length === 0) return;
+    try {
+      localStorage.setItem(storageKeyRef.current, JSON.stringify({
+        files,
+        fileContents: fileContentsRef.current,
+        selectedFile,
+      }));
+    } catch {
+      // localStorage may be full or unavailable
+    }
+  }, [files, selectedFile]);
+
   useEffect(() => {
     if (selectedFile && fileContentsRef.current[selectedFile] !== undefined) {
       setFileContent(fileContentsRef.current[selectedFile]);
@@ -732,6 +782,16 @@ export default function IDEPage() {
     if (selectedFile) {
       fileContentsRef.current[selectedFile] = fileContent;
       setTerminalOutput((prev) => [...prev, `[File saved: ${selectedFile}]`]);
+      // Persist content changes to localStorage
+      try {
+        localStorage.setItem(storageKeyRef.current, JSON.stringify({
+          files,
+          fileContents: fileContentsRef.current,
+          selectedFile,
+        }));
+      } catch {
+        // localStorage may be full or unavailable
+      }
     }
   };
 
