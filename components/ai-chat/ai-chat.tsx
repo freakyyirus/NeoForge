@@ -52,9 +52,10 @@ interface AIChatProps {
   ) => Promise<string>;
   onApplyCode?: (code: string, language?: string) => string[] | void | Promise<string[] | void>;
   onApplyMultiFile?: (edits: Array<{ filePath: string; content: string }>) => string[] | void | Promise<string[] | void>;
-  onApplyWorkspacePlan?: (plan: { folders: string[]; files: Array<{ filePath: string; content: string }> }) => string[] | void | Promise<string[] | void>;
+  onApplyWorkspacePlan?: (plan: { folders: string[]; files: Array<{ filePath: string; content: string }>; deletedFiles: string[] }) => string[] | void | Promise<string[] | void>;
   onPreviewDiff?: (code: string) => void;
   onPreviewMultiFile?: (edits: Array<{ filePath: string; content: string }>) => void;
+  onPushAndDeploy?: (commandText?: string) => Promise<{ message?: string } | void>;
   onGetEditorErrors?: () => string[];
   onRevertLastApply?: () => void;
   canRevertLastApply?: boolean;
@@ -87,7 +88,7 @@ function sanitizeAssistantMessage(text: string) {
     .trim();
 }
 
-function normalizeAssistantPath(rawPath: string) {
+function normalizeAssistantPath(rawPath: string): string {
   let cleaned = (rawPath || "").trim();
   if (!cleaned) return "";
 
@@ -138,6 +139,7 @@ export function AIChat({
   onApplyWorkspacePlan,
   onPreviewDiff,
   onPreviewMultiFile,
+  onPushAndDeploy,
   onGetEditorErrors,
   onRevertLastApply,
   canRevertLastApply = false,
@@ -431,12 +433,13 @@ export function AIChat({
           : context;
 
       const workspaceIntent = /\b(folder|folders|file|files|project|scaffold|structure|setup|create|edit|build|make|write|generate|add|implement)\b/i.test(input);
+      const pushDeployIntent = /\b(push|commit|deploy|redeploy|publish|ship)\b/i.test(input);
       const codeInstruction = [
         "CRITICAL OUTPUT FORMAT:",
         "1. ALWAYS start with a short plain-text description (1-3 sentences) stating: which file(s) you are creating/editing and what the code does. This description is the ONLY thing shown in chat.",
         "2. Place ALL code inside fenced code blocks (``` ``` ) — code blocks are applied directly to the editor and are NEVER shown to the user in chat.",
         "3. Never repeat code as prose. Never explain code line-by-line in the description. Do not include JSON, markdown lists of code, or fenced blocks in the description.",
-        "4. Format multi-file or scaffold requests as a SINGLE fenced ```json block: {\"folders\":[\"/path\"],\"files\":[{\"path\":\"/file\",\"content\":\"...\"}]}",
+        "4. Format multi-file or scaffold requests as a SINGLE fenced ```json block: {\"folders\":[\"/path\"],\"files\":[{\"path\":\"/file\",\"content\":\"...\"}],\"deletedFiles\":[\"/old-file\"]}",
         "5. Example of correct output format:",
         "  Created `src/Button.tsx` — a reusable button component with primary/secondary variants.",
         "  ```tsx",
@@ -454,7 +457,7 @@ export function AIChat({
       const workspacePlan = extractWorkspacePlan(response);
 
       const appliedWorkspace =
-        (workspacePlan.folders.length > 0 || workspacePlan.files.length > 0) &&
+        (workspacePlan.folders.length > 0 || workspacePlan.files.length > 0 || workspacePlan.deletedFiles.length > 0) &&
         Boolean(onApplyWorkspacePlan);
       const appliedMultiFile = !appliedWorkspace && multiFileEdits.length > 0 && Boolean(onApplyMultiFile);
       const appliedSingleFile = !appliedWorkspace && !appliedMultiFile && Boolean(firstCodeBlock && firstCodeBlock.code && onApplyCode);
@@ -470,9 +473,10 @@ export function AIChat({
         appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0 ? appliedResult : [
           ...workspacePlan.folders.map((f) => `📁 ${f}`),
           ...workspacePlan.files.map((f) => f.filePath),
+          ...workspacePlan.deletedFiles.map((f) => `🗑️ ${f}`),
         ]).filter(Boolean));
         if (!assistantContent) {
-          assistantContent = `Created ${workspacePlan.folders.length} folder(s) and ${workspacePlan.files.length} file(s).`;
+          assistantContent = `Updated workspace: ${workspacePlan.folders.length} folder(s), ${workspacePlan.files.length} file(s), ${workspacePlan.deletedFiles.length} deletion(s).`;
         }
       } else if (appliedMultiFile) {
         const appliedResult = await onApplyMultiFile?.(multiFileEdits);
@@ -496,6 +500,13 @@ export function AIChat({
         assistantContent = appliedFiles.length > 0
           ? `Applied ${appliedFiles.length} file(s) to the editor.`
           : descriptionText || "Done.";
+      }
+
+      if (pushDeployIntent && onPushAndDeploy) {
+        const pushResult = await onPushAndDeploy(input);
+        if (pushResult?.message) {
+          assistantContent = `${assistantContent}\n\n${pushResult.message}`;
+        }
       }
 
       const assistantMessage: Message = {
@@ -606,6 +617,7 @@ export function AIChat({
 
     const jsonBlockPattern = /```json\n([\s\S]*?)```/gi;
     const filesFromJson: Array<{ filePath: string; content: string }> = [];
+    const deletedFromJson = new Set<string>();
     let jsonBlockMatch: RegExpExecArray | null;
 
     while ((jsonBlockMatch = jsonBlockPattern.exec(content)) !== null) {
@@ -632,6 +644,24 @@ export function AIChat({
                 filePath: normalizeAssistantPath((file as { path: string }).path || ""),
                 content: (file as { content: string }).content,
               });
+            }
+          });
+        }
+
+        if (Array.isArray(parsed?.deletedFiles)) {
+          parsed.deletedFiles.forEach((item: unknown) => {
+            if (typeof item === "string") {
+              const normalized = normalizeAssistantPath(item);
+              if (normalized) deletedFromJson.add(normalized);
+            }
+          });
+        }
+
+        if (Array.isArray(parsed?.delete)) {
+          parsed.delete.forEach((item: unknown) => {
+            if (typeof item === "string") {
+              const normalized = normalizeAssistantPath(item);
+              if (normalized) deletedFromJson.add(normalized);
             }
           });
         }
@@ -668,6 +698,24 @@ export function AIChat({
             }
           });
         }
+
+        if (Array.isArray(parsed?.deletedFiles)) {
+          parsed.deletedFiles.forEach((item: unknown) => {
+            if (typeof item === "string") {
+              const normalized = normalizeAssistantPath(item);
+              if (normalized) deletedFromJson.add(normalized);
+            }
+          });
+        }
+
+        if (Array.isArray(parsed?.delete)) {
+          parsed.delete.forEach((item: unknown) => {
+            if (typeof item === "string") {
+              const normalized = normalizeAssistantPath(item);
+              if (normalized) deletedFromJson.add(normalized);
+            }
+          });
+        }
       } catch {
         // Ignore invalid raw JSON.
       }
@@ -677,6 +725,7 @@ export function AIChat({
     return {
       folders: Array.from(folders),
       files,
+      deletedFiles: Array.from(deletedFromJson),
     };
   };
 
@@ -939,10 +988,10 @@ export function AIChat({
                       {message.appliedFiles.map((filePath, i) => (
                         <span
                           key={i}
-                          className="flex items-center gap-1 rounded-md border border-black/20 bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium"
+                          className="flex max-w-full items-start gap-1 rounded-md border border-black/20 bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium"
                         >
                           <FileText className="h-3 w-3 shrink-0" />
-                          {filePath.startsWith("📁") ? filePath : filePath}
+                          <span className="break-all">{filePath.startsWith("📁") ? filePath : filePath}</span>
                         </span>
                       ))}
                     </div>

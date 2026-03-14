@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FileExplorer } from "@/components/file-explorer/file-explorer";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { TerminalComponent } from "@/components/terminal/terminal";
@@ -83,6 +83,7 @@ interface WorkspaceSnapshot {
 const initialFiles: FileItem[] = [];
 
 export default function IDEPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const repository = searchParams.get("repo") || "";
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -131,6 +132,8 @@ export default function IDEPage() {
   const previousBottomHeight = useRef(250);
   const centerColumnRef = useRef<HTMLDivElement>(null);
   const fileContentsRef = useRef<Record<string, string>>({});
+  const loadedRepositoryRef = useRef<string | null>(null);
+  const repoBaselineRef = useRef<Record<string, string>>({});
   const aiApplyHistoryRef = useRef<WorkspaceSnapshot[]>([]);
   const [canRevertLastApply, setCanRevertLastApply] = useState(false);
 
@@ -455,6 +458,72 @@ export default function IDEPage() {
   }, [selectedFile]);
 
   useEffect(() => {
+    if (!repository || loadedRepositoryRef.current === repository) return;
+
+    let cancelled = false;
+
+    const loadRepositoryFiles = async () => {
+      try {
+        setTerminalOutput((prev) => [...prev, `[repo] Loading files from ${repository}...`]);
+        const response = await fetch(`/api/github/tree?repository=${encodeURIComponent(repository)}`, {
+          cache: "no-store",
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          setTerminalOutput((prev) => [...prev, `[repo] Failed to load files: ${data?.error || "Unknown error"}`]);
+          return;
+        }
+
+        const repoFiles = Array.isArray(data?.files) ? data.files : [];
+        const nextContents: Record<string, string> = {};
+
+        repoFiles.forEach((file: { path?: string; content?: string }) => {
+          const path = normalizePath(String(file.path || ""));
+          if (!path || path === "/") return;
+          nextContents[path] = typeof file.content === "string" ? file.content : "";
+        });
+
+        const nextTree = Object.keys(nextContents).reduce<FileItem[]>((acc, path) => {
+          return insertPath(acc, path, false);
+        }, []);
+
+        if (cancelled) return;
+
+        fileContentsRef.current = nextContents;
+        repoBaselineRef.current = { ...nextContents };
+        setFiles(nextTree);
+
+        const preferredPath = ["/index.html", "/src/App.tsx", "/README.md"].find((path) => nextContents[path] !== undefined);
+        const firstPath = preferredPath || Object.keys(nextContents)[0] || null;
+
+        setSelectedFile(firstPath);
+        setFileContent(firstPath ? nextContents[firstPath] || "" : "");
+
+        setTerminalOutput((prev) => {
+          const lines = [...prev, `[repo] Loaded ${Object.keys(nextContents).length} file(s) from ${repository}`];
+          if (data?.truncated) {
+            lines.push("[repo] Large repository detected. Showing a partial set of text files.");
+          }
+          return lines;
+        });
+
+        loadedRepositoryRef.current = repository;
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Unknown error";
+        setTerminalOutput((prev) => [...prev, `[repo] Failed to load files: ${message}`]);
+      }
+    };
+
+    loadRepositoryFiles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [insertPath, normalizePath, repository]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
@@ -704,6 +773,76 @@ export default function IDEPage() {
     }
   };
 
+  const handlePushWorkspaceToGitHub = async (commandText?: string) => {
+    if (!repository) {
+      setTerminalOutput((prev) => [...prev, "[Push failed: No connected repository selected. Open IDE from /ide/new with a repo.]"]);
+      return { message: "Push failed: no connected repository selected." };
+    }
+
+    const commitMessage = (commandText || "").trim().slice(0, 180) || "chore: sync workspace from AI agent";
+    const baseline = repoBaselineRef.current;
+
+    const allFiles = {
+      ...fileContentsRef.current,
+      ...(selectedFile && fileContent ? { [selectedFile]: fileContent } : {}),
+    };
+
+    const changes = Object.entries(allFiles)
+      .filter(([path, content]) => baseline[path] !== content)
+      .map(([path, content]) => ({ path, content }));
+
+    const deletedFiles = Object.keys(baseline).filter((path) => allFiles[path] === undefined);
+    const shouldRedeploy = /\b(deploy|redeploy|ship|publish)\b/i.test(commandText || "");
+
+    if (changes.length === 0 && deletedFiles.length === 0 && !shouldRedeploy) {
+      setTerminalOutput((prev) => [...prev, "[Push skipped: No file changes detected]"]);
+      return { message: "No file changes to push." };
+    }
+
+    setIsCommitting(true);
+    setTerminalOutput((prev) => [...prev, `[Push] Syncing ${changes.length} change(s), ${deletedFiles.length} deletion(s)...`]);
+
+    try {
+      const response = await fetch("/api/github/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repository,
+          message: commitMessage,
+          changes: changes.map((change) => ({
+            path: change.path.replace(/^\//, ""),
+            content: change.content,
+          })),
+          deletedFiles: deletedFiles.map((path) => path.replace(/^\//, "")),
+          redeploy: shouldRedeploy,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        const err = data?.error || "Failed to sync repository";
+        setTerminalOutput((prev) => [...prev, `[Push failed: ${err}]`]);
+        return { message: `Push failed: ${err}` };
+      }
+
+      repoBaselineRef.current = { ...allFiles };
+
+      const deployNote = shouldRedeploy
+        ? (data?.redeployTriggered ? " Redeploy triggered." : ` ${data?.redeployInfo || "Redeploy not triggered."}`)
+        : "";
+
+      const summary = `Pushed ${data?.updatedCount ?? changes.length} file(s) and deleted ${data?.deletedCount ?? deletedFiles.length} file(s).${deployNote}`;
+      setTerminalOutput((prev) => [...prev, `[Push] ${summary}`]);
+      return { message: summary };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Network error";
+      setTerminalOutput((prev) => [...prev, `[Push failed: ${message}]`]);
+      return { message: `Push failed: ${message}` };
+    } finally {
+      setIsCommitting(false);
+    }
+  };
+
   const handleCmdKExecute = async () => {
     if (!cmdKInstruction.trim() || !selectedFile) return;
 
@@ -826,9 +965,9 @@ export default function IDEPage() {
     return edits.map((edit) => normalizePath(edit.filePath));
   };
 
-  const handleAIAutoApplyWorkspacePlan = (plan: { folders: string[]; files: Array<{ filePath: string; content: string }> }) => {
-    const { folders, files: planFiles } = plan;
-    if (folders.length === 0 && planFiles.length === 0) return [];
+  const handleAIAutoApplyWorkspacePlan = (plan: { folders: string[]; files: Array<{ filePath: string; content: string }>; deletedFiles: string[] }) => {
+    const { folders, files: planFiles, deletedFiles } = plan;
+    if (folders.length === 0 && planFiles.length === 0 && deletedFiles.length === 0) return [];
 
     pushAIApplySnapshot();
 
@@ -842,6 +981,23 @@ export default function IDEPage() {
       fileContentsRef.current[normalized] = file.content;
     });
 
+    deletedFiles.forEach((filePath) => {
+      const normalized = normalizePath(filePath);
+      setFiles((prev) => deleteFromTree(prev, normalized));
+      const nextContents: Record<string, string> = {};
+      Object.entries(fileContentsRef.current).forEach(([itemPath, content]) => {
+        if (!(itemPath === normalized || itemPath.startsWith(`${normalized}/`))) {
+          nextContents[itemPath] = content;
+        }
+      });
+      fileContentsRef.current = nextContents;
+
+      if (selectedFile && (selectedFile === normalized || selectedFile.startsWith(`${normalized}/`))) {
+        setSelectedFile(null);
+        setFileContent("");
+      }
+    });
+
     if (planFiles.length > 0) {
       const firstFile = normalizePath(planFiles[0].filePath);
       setSelectedFile(firstFile);
@@ -850,10 +1006,11 @@ export default function IDEPage() {
 
     setActiveTab("preview");
     setPreviewMode("editor");
-    setTerminalOutput((prev) => [...prev, `[AI applied workspace plan: ${folders.length} folder(s), ${planFiles.length} file(s)]`]);
+    setTerminalOutput((prev) => [...prev, `[AI applied workspace plan: ${folders.length} folder(s), ${planFiles.length} file(s), ${deletedFiles.length} deletion(s)]`]);
     return [
       ...folders.map((folderPath) => `📁 ${normalizePath(folderPath)}`),
       ...planFiles.map((file) => normalizePath(file.filePath)),
+      ...deletedFiles.map((filePath) => `🗑️ ${normalizePath(filePath)}`),
     ];
   };
 
@@ -1261,10 +1418,12 @@ ${fileContent}
       <header className="flex h-12 items-center justify-between border-b-4 border-black bg-white px-4">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowLeftPanel(!showLeftPanel)}
+            onClick={() => router.back()}
+            aria-label="Go back"
+            title="Go back"
             className="rounded border-2 border-black p-1 hover:bg-muted"
           >
-            {showLeftPanel ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <ChevronLeft className="h-4 w-4" />
           </button>
           <Badge variant="secondary">main</Badge>
           <span className="text-sm font-medium">{selectedFile || "No file selected"}</span>
@@ -1816,6 +1975,7 @@ ${fileContent}
                   onApplyCode={handleAIApplyCode}
                   onApplyMultiFile={handleAIAutoApplyMultiFile}
                   onApplyWorkspacePlan={handleAIAutoApplyWorkspacePlan}
+                  onPushAndDeploy={handlePushWorkspaceToGitHub}
                   onGetEditorErrors={getEditorErrors}
                   onRevertLastApply={handleRevertLastAIApply}
                   canRevertLastApply={canRevertLastApply}
