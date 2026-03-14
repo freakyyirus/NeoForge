@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FFFFFF;
+  --foreground: #000000;
+  --primary: #FFE600;
+  --primary-foreground: #000000;
+  --secondary: #0066FF;
+  --secondary-foreground: #FFFFFF;
+  --accent: #FF00FF;
+  --accent-foreground: #FFFFFF;
+  --muted: #F5F5F5;
+  --muted-foreground: #666666;
+  --destructive: #FF3333;
+  --destructive-foreground: #FFFFFF;
+  --border: #000000;
+  --ring: #000000;
+  --success: #00FF66;
+  --warning: #FF9900;
+  --radius: 8px;
+}
+
+@theme inline {
+  --color-primary: #FFE600;
+  --color-primary-foreground: #000000;
+  --color-secondary: #0066FF;
+  --color-secondary-foreground: #FFFFFF;
+  --color-accent: #FF00FF;
+  --color-accent-foreground: #FFFFFF;
+  --color-muted: #F5F5F5;
+  --color-muted-foreground: #666666;
+  --color-destructive: #FF3333;
+  --color-destructive-foreground: #FFFFFF;
+  --color-background: #FFFFFF;
+  --color-foreground: #000000;
+  --color-border: #000000;
+  --color-ring: #000000;
+  --color-success: #00FF66;
+  --color-warning: #FF9900;
+  
+  --font-sans: 'Space Grotesk', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  
+  --shadow-brutal: 4px 4px 0px 0px #000000;
+  --shadow-brutal-sm: 2px 2px 0px 0px #000000;
+  --shadow-brutal-lg: 6px 6px 0px 0px #000000;
+  --shadow-brutal-xl: 8px 8px 0px 0px #000000;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 0.5s ease-in-out;
+}
+
+.animate-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+.chat-scrollbar {
+  scrollbar-width: auto;
+  scrollbar-color: #000000 #f5f5f5;
+  scrollbar-gutter: stable;
+}
+
+.chat-scrollbar::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: #f5f5f5;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background: #000000;
+  border: 2px solid #f5f5f5;
+}
