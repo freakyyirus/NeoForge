@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id         String    @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  emailVerified     Boolean   @default(false)
+  name              String?
+  image             String?
+  githubAccessToken String?
+  githubId          String?   @unique
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  accounts          Account[]
+  sessions          Session[]
+  repositories      Repository[]
+  reviews           Review[]
+  subscription      Subscription?
+}
+
+model Repository {
+  id                String    @id @default(cuid())
+  owner             String
+  name              String
+  githubId          String
+  githubNodeId      String?
+  isActive          Boolean   @default(true)
+  lastIndexedAt     DateTime?
+  webhookId         String?
+  webhookSecret     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  reviews           Review[]
+  indexedFiles      IndexedFile[]
+  
+  @@unique([owner, name])
+}
+
+model Review {
+  id                String    @id @default(cuid())
+  prNumber          Int
+  prTitle           String?
+  prBody            String?
+  prState           String
+  reviewType       ReviewType
+  status            ReviewStatus @default(PENDING)
+  
+  githubReviewId    Int?
+  diff              String    @db.Text
+  
+  walkthrough       String?   @db.Text
+  sequenceDiagrams  Json?
+  summary           String?   @db.Text
+  strengths         Json?
+  issues            Json?
+  suggestions       Json?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  repositoryId      String
+  repository        Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([repositoryId, prNumber])
+}
+
+model Subscription {
+  id                String    @id @default(cuid())
+  polarCustomerId   String?   @unique
+  polarSubscriptionId String? @unique
+  status            SubscriptionStatus @default(FREE_TIER)
+  tier              Tier      @default(FREE)
+  currentPeriodEnd  DateTime?
+  
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model IndexedFile {
+  id                String    @id @default(cuid())
+  filePath          String
+  fileHash          String
+  content           String    @db.Text
+  embeddingId       String?   @unique
+  
+  repositoryId      String
+  repository        Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@unique([repositoryId, filePath])
+}
+
+enum ReviewType {
+  AUTOMATIC
+  MANUAL
+}
+
+enum ReviewStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  FREE_TIER
+}
+
+enum Tier {
+  FREE
+  PRO
+}
