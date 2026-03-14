@@ -30,6 +30,44 @@ interface DashboardData {
   reviewStatusData: { name: string; value: number; color: string }[];
 }
 
+function deriveReviewStatusFromActivities(
+  activities: Array<{ type?: string; message?: string }> | undefined
+) {
+  const counts = {
+    pending: 0,
+    inProgress: 0,
+    completed: 0,
+    failed: 0,
+  };
+
+  const reviewActivities = Array.isArray(activities)
+    ? activities.filter((activity) => activity?.type === "review")
+    : [];
+
+  reviewActivities.forEach((activity) => {
+    const message = String(activity?.message || "").toLowerCase();
+    const actionMatch = message.match(/pr\s*#\d+\s+([^:]+):/i);
+    const action = (actionMatch?.[1] || "").trim();
+
+    if (["opened", "reopened", "ready_for_review", "review_requested"].includes(action)) {
+      counts.pending += 1;
+      return;
+    }
+
+    if (["synchronize", "edited", "converted_to_draft"].includes(action)) {
+      counts.inProgress += 1;
+      return;
+    }
+
+    if (["closed", "merged"].includes(action)) {
+      counts.completed += 1;
+      return;
+    }
+  });
+
+  return counts;
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData>({
     totalRepos: 0,
@@ -86,18 +124,31 @@ export default function DashboardPage() {
       const githubRepos = Array.isArray(reposData?.repos) ? reposData.repos : [];
       const reviews = reviewsData.reviews || [];
       const statusCounts = reviewsData?.statusCounts || {};
-      const pendingReviews = Number(statusCounts.PENDING || 0);
-      const inProgressReviews = Number(statusCounts.IN_PROGRESS || 0);
-      const completedReviews = Number(statusCounts.COMPLETED || 0);
-      const failedReviews = Number(statusCounts.FAILED || 0);
+      let pendingReviews = Number(statusCounts.PENDING || 0);
+      let inProgressReviews = Number(statusCounts.IN_PROGRESS || 0);
+      let completedReviews = Number(statusCounts.COMPLETED || 0);
+      let failedReviews = Number(statusCounts.FAILED || 0);
+
+      // Fallback: when DB-backed review counts are empty, derive from real GitHub PR activity.
+      if (pendingReviews + inProgressReviews + completedReviews + failedReviews === 0) {
+        const activityDerived = deriveReviewStatusFromActivities(activityData?.activities);
+        pendingReviews = activityDerived.pending;
+        inProgressReviews = activityDerived.inProgress;
+        completedReviews = activityDerived.completed;
+        failedReviews = activityDerived.failed;
+      }
+
+      const derivedTotalReviews = pendingReviews + inProgressReviews + completedReviews + failedReviews;
       const commitData = Array.isArray(activityData?.commitSeries)
         ? activityData.commitSeries
         : fallbackCommitSeries;
 
       setData({
         totalRepos: githubRepos.length,
-        totalReviews: Number.isFinite(reviewsData?.pagination?.total)
+        totalReviews: Number.isFinite(reviewsData?.pagination?.total) && reviewsData.pagination.total > 0
           ? reviewsData.pagination.total
+          : derivedTotalReviews > 0
+          ? derivedTotalReviews
           : reviews.length,
         recentCommits: activityData?.commitsThisWeek || 0,
         pendingReviews,

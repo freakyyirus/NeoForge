@@ -17,12 +17,12 @@ export default function Home() {
             <span className="flex h-10 w-10 items-center justify-center border-2 border-black bg-[#FFE600] shadow-[3px_3px_0px_0px_#000]">
               <Layers className="h-5 w-5" />
             </span>
-            <span className="text-[36px] font-black leading-none" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: "36px" }}>
+            <span className="text-[30px] font-black leading-none" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: "30px" }}>
               NeoForge
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-10 text-[30px] font-extrabold md:flex" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: "30px" }}>
+          <nav className="hidden items-center gap-8 text-[22px] font-extrabold md:flex" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: "22px" }}>
             <Link href="#features" className="transition-opacity hover:opacity-70">
               Features
             </Link>
@@ -46,14 +46,14 @@ export default function Home() {
 
       <main>
         <section className="border-b-2 border-black bg-[#FFE600] bg-[repeating-linear-gradient(45deg,rgba(0,0,0,0.05)_0,rgba(0,0,0,0.05)_1px,transparent_1px,transparent_12px)]">
-          <div className="mx-auto grid w-full max-w-[1920px] gap-10 px-3 pb-14 pt-10 sm:px-5 sm:pb-16 sm:pt-12 md:pb-20 md:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-16 xl:px-6">
+          <div className="mx-auto grid w-full max-w-[1680px] gap-10 px-5 pb-14 pt-10 sm:px-7 sm:pb-16 sm:pt-12 md:pb-20 md:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-16 xl:px-10">
             <div>
               <div className="inline-flex items-center gap-2 border-2 border-black bg-black px-4 py-2 text-xs font-extrabold text-[#FFE600] shadow-[3px_3px_0px_0px_#000] sm:text-sm">
                 <Sparkles className="h-4 w-4" />
                 Now with Gemini 2.5 Flash + Claude 3.5 Sonnet
               </div>
 
-              <h1 className="mt-7 max-w-4xl text-[44px] font-black leading-[0.95] sm:text-[64px] md:text-[88px]" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+              <h1 className="mt-7 max-w-4xl text-[40px] font-black leading-[0.95] sm:text-[56px] md:text-[72px]" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
                 <span className="block">The Ultimate</span>
                 <span className="mt-2 block">AI IDE &</span>
                 <span className="mt-3 inline-block bg-black px-3 py-2 text-[#FFE600]">Review Engine</span>
@@ -131,10 +131,10 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="features" className="border-b-2 border-black bg-[#ECECEC] py-16">
+        <section id="features" className="border-b-2 border-black bg-[#ECECEC] py-14">
           <div className="mx-auto w-full max-w-[1920px] px-3 sm:px-5 xl:px-6">
             <div className="text-center">
-              <h2 className="text-[44px] font-black leading-tight sm:text-[58px]">Built for Modern Developers</h2>
+              <h2 className="text-[38px] font-black leading-tight sm:text-[50px]">Built for Modern Developers</h2>
               <p className="mt-3 text-lg font-medium text-black/60 sm:text-2xl">
                 Everything you need to code, collaborate, and ship better code.
               </p>
@@ -180,39 +180,39 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="border-b-2 border-black bg-[#ECECEC] py-20">
+        <section className="border-b-2 border-black bg-[#ECECEC] py-16">
           <div className="relative mx-auto w-full max-w-[1920px] px-3 text-center sm:px-5 xl:px-6">
-            <div className="pointer-events-none absolute inset-0 hidden md:block">
-              <div className="pointer-events-auto absolute left-[8%] top-[16%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
+            <div className="pointer-events-none absolute inset-0 hidden xl:block">
+              <div className="pointer-events-auto absolute left-[3%] top-[14%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
                 <TerminalSquare className="h-4 w-4" />
                 Terminal
               </div>
-              <div className="pointer-events-auto absolute right-[10%] top-[18%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
+              <div className="pointer-events-auto absolute right-[4%] top-[16%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
                 <Github className="h-4 w-4" />
                 GitHub
               </div>
-              <div className="pointer-events-auto absolute left-[12%] bottom-[24%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
+              <div className="pointer-events-auto absolute left-[6%] bottom-[26%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
                 <FolderGit2 className="h-4 w-4" />
                 Repo
               </div>
-              <div className="pointer-events-auto absolute right-[12%] bottom-[27%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
+              <div className="pointer-events-auto absolute right-[6%] bottom-[28%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
                 <Layers className="h-4 w-4" />
                 IDE
               </div>
-              <div className="pointer-events-auto absolute right-[18%] top-[46%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
+              <div className="pointer-events-auto absolute right-[10%] top-[50%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
                 <Cloud className="h-4 w-4" />
                 Vercel
               </div>
-              <div className="pointer-events-auto absolute left-[20%] top-[44%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
+              <div className="pointer-events-auto absolute left-[10%] top-[50%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
                 <Bot className="h-4 w-4" />
                 AI
               </div>
-              <div className="pointer-events-auto absolute right-[20%] bottom-[16%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
+              <div className="pointer-events-auto absolute right-[10%] bottom-[14%] flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-sm font-bold shadow-[4px_4px_0px_0px_#000] transition-transform duration-150 hover:-translate-y-0.5">
                 <Bot className="h-4 w-4" />
                 Anthropic
               </div>
             </div>
-            <h2 className="text-[42px] font-black leading-tight sm:text-[64px] md:text-[84px]" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+            <h2 className="text-[36px] font-black leading-tight sm:text-[56px] md:text-[68px]" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
               Everything you need.
               <span className="block text-[#1868E7]">Nothing you don't.</span>
             </h2>
@@ -222,9 +222,9 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="border-b-2 border-black bg-black py-16">
-          <div className="mx-auto w-full max-w-[1920px] px-3 sm:px-5 xl:px-6">
-            <h3 className="text-center text-[38px] font-black leading-tight text-[#FFE600] sm:text-[54px] md:text-[68px]">
+        <section className="border-b-2 border-black bg-black py-14">
+          <div className="mx-auto w-full max-w-[1680px] px-5 sm:px-7 xl:px-10">
+            <h3 className="text-center text-[34px] font-black leading-tight text-[#FFE600] sm:text-[48px] md:text-[58px]">
               Code in the browser.
             </h3>
             <p className="mt-3 text-center text-base font-semibold text-white/60 sm:text-2xl">
@@ -306,14 +306,14 @@ server.listen(3000);`}</pre>
           </div>
         </section>
 
-        <section id="pricing" className="border-b-2 border-black bg-[#ECECEC] py-20">
+        <section id="pricing" className="border-b-2 border-black bg-[#ECECEC] py-16">
           <div className="mx-auto w-full max-w-[1920px] px-3 sm:px-5 xl:px-6">
-            <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-2">
-              <div className="border-2 border-black bg-white p-8 shadow-[6px_6px_0px_0px_#000]">
-                <h4 className="text-3xl font-black">Free Tier</h4>
+            <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2 xl:grid-cols-3">
+              <div className="border-2 border-black bg-white p-5 shadow-[6px_6px_0px_0px_#000]">
+                <h4 className="text-2xl font-black">Free Tier</h4>
                 <p className="mt-2 text-black/60">For solo builders</p>
-                <p className="mt-6 text-5xl font-black">$0</p>
-                <ul className="mt-6 space-y-2 text-base font-semibold text-black/70 sm:text-2xl">
+                <p className="mt-4 text-4xl font-black">$0</p>
+                <ul className="mt-5 space-y-2 text-base font-semibold text-black/70 sm:text-xl">
                   <li>5 repositories</li>
                   <li>5 reviews per repo</li>
                   <li>Core IDE features</li>
@@ -321,18 +321,18 @@ server.listen(3000);`}</pre>
                 </ul>
                 <Link
                   href="/sign-in"
-                  className="mt-8 inline-flex w-full items-center justify-center border-2 border-black bg-black px-6 py-3 text-sm font-extrabold text-white shadow-[4px_4px_0px_0px_#000]"
+                  className="mt-6 inline-flex w-full items-center justify-center border-2 border-black bg-black px-5 py-2.5 text-sm font-extrabold text-white shadow-[4px_4px_0px_0px_#000]"
                 >
                   Start Free
                 </Link>
               </div>
 
-              <div className="border-2 border-black bg-white p-8 shadow-[6px_6px_0px_0px_#1868E7]">
-                <h4 className="text-3xl font-black">Pro Tier</h4>
+              <div className="border-2 border-black bg-white p-5 shadow-[6px_6px_0px_0px_#1868E7]">
+                <h4 className="text-2xl font-black">Pro Tier</h4>
                 <p className="mt-2 text-black/60">For growing teams</p>
-                <p className="mt-6 text-5xl font-black">$29</p>
+                <p className="mt-4 text-4xl font-black">$29</p>
                 <p className="text-sm text-black/50">per month</p>
-                <ul className="mt-6 space-y-2 text-base font-semibold text-black/70 sm:text-2xl">
+                <ul className="mt-5 space-y-2 text-base font-semibold text-black/70 sm:text-xl">
                   <li>Unlimited repositories</li>
                   <li>Unlimited AI reviews</li>
                   <li>Advanced IDE tooling</li>
@@ -340,18 +340,37 @@ server.listen(3000);`}</pre>
                 </ul>
                 <Link
                   href="/sign-in"
-                  className="mt-8 inline-flex w-full items-center justify-center border-2 border-black bg-black px-6 py-3 text-sm font-extrabold text-[#FFE600] shadow-[4px_4px_0px_0px_#000]"
+                  className="mt-6 inline-flex w-full items-center justify-center border-2 border-black bg-black px-5 py-2.5 text-sm font-extrabold text-[#FFE600] shadow-[4px_4px_0px_0px_#000]"
                 >
                   Upgrade to Pro
+                </Link>
+              </div>
+
+              <div className="border-2 border-black bg-white p-5 shadow-[6px_6px_0px_0px_#000]">
+                <h4 className="text-2xl font-black">Custom Plan</h4>
+                <p className="mt-2 text-black/60">For teams with custom needs</p>
+                <p className="mt-4 text-4xl font-black">Custom</p>
+                <p className="text-sm text-black/50">tailored pricing</p>
+                <ul className="mt-5 space-y-2 text-base font-semibold text-black/70 sm:text-xl">
+                  <li>Dedicated onboarding</li>
+                  <li>Custom model routing</li>
+                  <li>SLA and premium support</li>
+                  <li>Enterprise security controls</li>
+                </ul>
+                <Link
+                  href="/dashboard/settings"
+                  className="mt-6 inline-flex w-full items-center justify-center border-2 border-black bg-black px-5 py-2.5 text-sm font-extrabold text-white shadow-[4px_4px_0px_0px_#000]"
+                >
+                  Contact Sales
                 </Link>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="border-b-2 border-black bg-[#1868E7] py-20">
+        <section className="border-b-2 border-black bg-[#1868E7] py-16">
           <div className="mx-auto w-full max-w-[1920px] px-3 text-center sm:px-5 xl:px-6">
-            <h3 className="text-[44px] font-black leading-tight text-white sm:text-[66px] md:text-[82px]">
+            <h3 className="text-[36px] font-black leading-tight text-white sm:text-[54px] md:text-[64px]">
               Ready to forge the future?
             </h3>
             <p className="mx-auto mt-6 max-w-4xl text-xl font-semibold leading-relaxed text-white/70 sm:text-4xl">
