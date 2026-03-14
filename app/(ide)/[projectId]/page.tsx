@@ -1764,7 +1764,7 @@ ${fileContent}
                             <p className="text-sm font-bold">{finding.title}</p>
                             <div className="flex items-center gap-2">
                               <Badge variant="secondary">{finding.severity.toUpperCase()}</Badge>
-                              {typeof finding.line === "number" && <Badge variant="outline">Line {finding.line}</Badge>}
+                              {typeof finding.line === "number" && <Badge variant="default">Line {finding.line}</Badge>}
                             </div>
                           </div>
                           <p className="text-xs whitespace-pre-wrap">{finding.explanation}</p>
