@@ -962,7 +962,11 @@ export default function IDEPage() {
   };
 
   const buildWorkspacePreviewDoc = (): { doc: string; entryFile: string | null; fileCount: number; isFramework: boolean } => {
-    const allFiles = fileContentsRef.current;
+    // Merge saved files with the currently open file so preview works even before an explicit save
+    const allFiles = {
+      ...fileContentsRef.current,
+      ...(selectedFile && fileContent ? { [selectedFile]: fileContent } : {}),
+    };
     const paths = Object.keys(allFiles);
     const fileCount = paths.length;
 
@@ -1003,7 +1007,7 @@ export default function IDEPage() {
 
     // Inline <script src="..."> → <script> inline (skip CDN/external)
     html = html.replace(
-      /<script([^>]*)><\/script>/gi,
+      /<script([^>]*)>[\s\S]*?<\/script>/gi,
       (match, attrs: string) => {
         const srcMatch = attrs.match(/src=["']([^"']+)["']/i);
         if (!srcMatch) return match;

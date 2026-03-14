@@ -87,6 +87,50 @@ function sanitizeAssistantMessage(text: string) {
     .trim();
 }
 
+function normalizeAssistantPath(rawPath: string) {
+  let cleaned = (rawPath || "").trim();
+  if (!cleaned) return "";
+
+  cleaned = cleaned
+    .replace(/^[-*+\s]+/, "")
+    .replace(/^\d+[.)]\s+/, "")
+    .replace(/^`+|`+$/g, "")
+    .replace(/^\*+|\*+$/g, "")
+    .replace(/^"+|"+$/g, "")
+    .replace(/^'+|'+$/g, "")
+    .replace(/\s+\|.*$/, "")
+    .replace(/[*_]+$/g, "")
+    .replace(/[),;:.]+$/g, "")
+    .replace(/\\/g, "/")
+    .trim();
+
+  if (!cleaned) return "";
+  if (!cleaned.startsWith("/") && !cleaned.startsWith("📁")) {
+    cleaned = `/${cleaned}`;
+  }
+
+  if (cleaned.startsWith("📁")) {
+    const folder = normalizeAssistantPath(cleaned.replace(/^📁\s*/, ""));
+    return folder ? `📁 ${folder}` : "";
+  }
+
+  return cleaned.replace(/\/+/g, "/");
+}
+
+function sanitizeAppliedFiles(paths: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  paths.forEach((path) => {
+    const normalized = normalizeAssistantPath(path);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    result.push(normalized);
+  });
+
+  return result;
+}
+
 export function AIChat({
   onSendMessage,
   onApplyCode,
@@ -398,6 +442,7 @@ export function AIChat({
         "  ```tsx",
         "  export function Button() { ... }",
         "  ```",
+        "6. Include valid, clean absolute file paths (no markdown symbols) and ensure scaffold output is preview-ready (include the required entry files for preview).",
       ].join("\n");
       const optimizedMessage = workspaceIntent
         ? `${input}\n\n${codeInstruction}\n\nReturn ONLY one JSON code block in the exact shape above. Start with a one-sentence description of what you are scaffolding, then the JSON block.`
@@ -422,24 +467,24 @@ export function AIChat({
 
       if (appliedWorkspace) {
         const appliedResult = await onApplyWorkspacePlan?.(workspacePlan);
-        appliedFiles = (appliedResult && appliedResult.length > 0 ? appliedResult : [
+        appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0 ? appliedResult : [
           ...workspacePlan.folders.map((f) => `📁 ${f}`),
           ...workspacePlan.files.map((f) => f.filePath),
-        ]).filter(Boolean);
+        ]).filter(Boolean));
         if (!assistantContent) {
           assistantContent = `Created ${workspacePlan.folders.length} folder(s) and ${workspacePlan.files.length} file(s).`;
         }
       } else if (appliedMultiFile) {
         const appliedResult = await onApplyMultiFile?.(multiFileEdits);
-        appliedFiles = (appliedResult && appliedResult.length > 0
+        appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0
           ? appliedResult
-          : multiFileEdits.map((e) => e.filePath)).filter(Boolean);
+          : multiFileEdits.map((e) => e.filePath)).filter(Boolean));
         if (!assistantContent) {
           assistantContent = `Edited ${multiFileEdits.length} file(s).`;
         }
       } else if (appliedSingleFile) {
         const appliedResult = await onApplyCode?.(firstCodeBlock!.code, firstCodeBlock?.language);
-        appliedFiles = (appliedResult && appliedResult.length > 0 ? appliedResult : []).filter(Boolean);
+        appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0 ? appliedResult : []).filter(Boolean));
         const lang = firstCodeBlock?.language || "";
         if (!assistantContent) {
           assistantContent = `Updated ${appliedFiles[0] || (lang ? `${lang} file` : "the current file")} in the editor.`;
@@ -523,7 +568,7 @@ export function AIChat({
     const headingPattern = /(?:^|\n)\s*(?:#+\s*)?file\s*:\s*([^\n]+)\n```(?:[\w+-]+)?\n([\s\S]*?)```/gi;
     let headingMatch: RegExpExecArray | null;
     while ((headingMatch = headingPattern.exec(content)) !== null) {
-      const filePath = headingMatch[1].trim();
+      const filePath = normalizeAssistantPath(headingMatch[1]);
       const block = headingMatch[2].trim();
       if (!filePath || !block) continue;
       const key = `${filePath}:${block.length}`;
@@ -535,7 +580,7 @@ export function AIChat({
     const fencePathPattern = /```(?:[\w+-]+)?\s*path=([^\n]+)\n([\s\S]*?)```/gi;
     let fencePathMatch: RegExpExecArray | null;
     while ((fencePathMatch = fencePathPattern.exec(content)) !== null) {
-      const filePath = fencePathMatch[1].trim();
+      const filePath = normalizeAssistantPath(fencePathMatch[1]);
       const block = fencePathMatch[2].trim();
       if (!filePath || !block) continue;
       const key = `${filePath}:${block.length}`;
@@ -553,7 +598,7 @@ export function AIChat({
     const folderHeadingPattern = /(?:^|\n)\s*(?:#+\s*)?folder\s*:\s*([^\n]+)/gi;
     let folderMatch: RegExpExecArray | null;
     while ((folderMatch = folderHeadingPattern.exec(content)) !== null) {
-      const folderPath = folderMatch[1].trim();
+      const folderPath = normalizeAssistantPath(folderMatch[1]);
       if (folderPath) {
         folders.add(folderPath);
       }
@@ -569,7 +614,8 @@ export function AIChat({
         if (Array.isArray(parsed?.folders)) {
           parsed.folders.forEach((folder: unknown) => {
             if (typeof folder === "string" && folder.trim()) {
-              folders.add(folder.trim());
+              const normalized = normalizeAssistantPath(folder);
+              if (normalized) folders.add(normalized);
             }
           });
         }
@@ -583,7 +629,7 @@ export function AIChat({
               typeof (file as { content?: unknown }).content === "string"
             ) {
               filesFromJson.push({
-                filePath: ((file as { path: string }).path || "").trim(),
+                filePath: normalizeAssistantPath((file as { path: string }).path || ""),
                 content: (file as { content: string }).content,
               });
             }
@@ -602,7 +648,8 @@ export function AIChat({
         if (Array.isArray(parsed?.folders)) {
           parsed.folders.forEach((folder: unknown) => {
             if (typeof folder === "string" && folder.trim()) {
-              folders.add(folder.trim());
+              const normalized = normalizeAssistantPath(folder);
+              if (normalized) folders.add(normalized);
             }
           });
         }
@@ -615,7 +662,7 @@ export function AIChat({
               typeof (file as { content?: unknown }).content === "string"
             ) {
               filesFromJson.push({
-                filePath: ((file as { path: string }).path || "").trim(),
+                filePath: normalizeAssistantPath((file as { path: string }).path || ""),
                 content: (file as { content: string }).content,
               });
             }
