@@ -1416,20 +1416,20 @@ ${fileContent}
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-muted">
       <header className="flex h-12 items-center justify-between border-b-4 border-black bg-white px-4">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           <button
             onClick={() => router.back()}
             aria-label="Go back"
             title="Go back"
-            className="rounded border-2 border-black p-1 hover:bg-muted"
+            className="shrink-0 rounded border-2 border-black p-1 hover:bg-muted"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <Badge variant="secondary">main</Badge>
-          <span className="text-sm font-medium">{selectedFile || "No file selected"}</span>
+          <Badge variant="secondary" className="shrink-0">main</Badge>
+          <span className="truncate text-sm font-medium">{selectedFile || "No file selected"}</span>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Button 
             variant="outline" 
             size="sm" 
@@ -1724,26 +1724,41 @@ ${fileContent}
                       {previewMode === "app" && (() => {
                         if (!ws) return null;
                         const { doc, entryFile, fileCount, isFramework } = ws;
+                        const fallbackDoc = buildLivePreviewDoc();
 
                         if (isFramework && !doc) {
                           return (
-                            <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-md border-2 border-black bg-muted p-6 text-center">
-                              <Play className="h-8 w-8 text-muted-foreground" />
-                              <p className="font-bold">Framework project detected</p>
-                              <p className="text-sm text-muted-foreground">Run your dev server in the Terminal, then switch to Dev Server mode.</p>
-                              <Button type="button" size="sm" variant="outline" onClick={() => { setShowBottomPanel(true); setActiveTab("terminal"); }}>
-                                Open Terminal
-                              </Button>
-                            </div>
+                            <>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-yellow-800">framework fallback preview</span>
+                                <span>Run your dev server for full app rendering.</span>
+                              </div>
+                              <iframe
+                                key={previewRefreshSignal}
+                                title="Live Workspace Preview"
+                                srcDoc={fallbackDoc}
+                                sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+                                className="min-h-0 flex-1 w-full rounded-md border-2 border-black bg-white"
+                              />
+                            </>
                           );
                         }
 
                         if (!entryFile) {
                           return (
-                            <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-md border-2 border-black bg-muted p-6 text-center">
-                              <p className="font-bold">No HTML entry point found</p>
-                              <p className="text-sm text-muted-foreground">Create an <code className="rounded bg-black/10 px-1">index.html</code> file and the preview will render here automatically.</p>
-                            </div>
+                            <>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span className="rounded bg-muted px-1.5 py-0.5">no html entry</span>
+                                <span>Showing file-level preview fallback.</span>
+                              </div>
+                              <iframe
+                                key={previewRefreshSignal}
+                                title="Live Workspace Preview"
+                                srcDoc={fallbackDoc}
+                                sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+                                className="min-h-0 flex-1 w-full rounded-md border-2 border-black bg-white"
+                              />
+                            </>
                           );
                         }
 
