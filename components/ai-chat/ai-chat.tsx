@@ -167,6 +167,8 @@ export function AIChat({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const activeRequestIdRef = useRef(0);
+  const cancelledRequestIdsRef = useRef<Set<number>>(new Set());
 
   const storageKey = `neoforge-ai-chat:${pathname}`;
 
@@ -190,12 +192,32 @@ export function AIChat({
   };
 
   const startNewChat = () => {
+    if (isLoading && activeRequestIdRef.current > 0) {
+      cancelledRequestIdsRef.current.add(activeRequestIdRef.current);
+      setIsLoading(false);
+    }
     const next = createConversation();
     setConversations((prev) => [next, ...prev]);
     setActiveConversationId(next.id);
     setMessages([]);
     setInput("");
     setShowHistory(false);
+  };
+
+  const cancelOngoingRequest = () => {
+    if (!isLoading || activeRequestIdRef.current <= 0) return;
+
+    cancelledRequestIdsRef.current.add(activeRequestIdRef.current);
+    setIsLoading(false);
+
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      role: "assistant",
+      content: "Canceled the in-progress request.",
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, assistantMessage]);
   };
 
   const renameConversation = (conversationId: string) => {
@@ -403,6 +425,11 @@ export function AIChat({
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
+    const requestId = activeRequestIdRef.current + 1;
+    activeRequestIdRef.current = requestId;
+    const isRequestCancelled = () =>
+      cancelledRequestIdsRef.current.has(requestId) || activeRequestIdRef.current !== requestId;
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -436,7 +463,13 @@ export function AIChat({
           ? [...context, { type: "editor_errors", data: editorErrors }]
           : context;
 
-      const deleteTargetsFromInput = extractDeleteTargetsFromText(input);
+      let deleteTargetsFromInput = extractDeleteTargetsFromText(input);
+      if (isDeleteAllIntent(input)) {
+        const knownPaths = extractKnownWorkspacePaths(messages, context);
+        if (knownPaths.length > 0) {
+          deleteTargetsFromInput = knownPaths;
+        }
+      }
       const isDeleteOnlyIntent =
         deleteTargetsFromInput.length > 0 &&
         !/\b(create|add|build|generate|write|implement|scaffold|setup)\b/i.test(input);
@@ -448,6 +481,7 @@ export function AIChat({
           files: [],
           deletedFiles: deleteTargetsFromInput,
         });
+        if (isRequestCancelled()) return;
         const appliedFiles = sanitizeAppliedFiles(
           (appliedResult && appliedResult.length > 0
             ? appliedResult
@@ -483,10 +517,11 @@ export function AIChat({
         "8. Keep building momentum across turns by default. Only stop or pause if user explicitly says stop/pause/cancel.",
       ].join("\n");
       const optimizedMessage = workspaceIntent
-        ? `${input}\n\n${codeInstruction}\n\nReturn ONLY one JSON code block in the exact shape above. Start with a one-sentence description of what you are scaffolding, then the JSON block.`
+        ? `${input}\n\n${codeInstruction}\n\nReturn EXACTLY one fenced \`\`\`json block in the required shape and nothing else (no prose before or after).`
         : `${input}\n\n${codeInstruction}`;
 
       const response = await onSendMessage(optimizedMessage, requestContext, apiKey || undefined, model, providerModel || undefined);
+      if (isRequestCancelled()) return;
       const firstCodeBlock = extractCodeBlock(response);
       const multiFileEdits = extractMultiFileEdits(response);
       const workspacePlan = extractWorkspacePlan(response);
@@ -509,6 +544,7 @@ export function AIChat({
 
       if (appliedWorkspace) {
         const appliedResult = await onApplyWorkspacePlan?.(finalWorkspacePlan);
+        if (isRequestCancelled()) return;
         appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0 ? appliedResult : [
           ...finalWorkspacePlan.folders.map((f) => `📁 ${f}`),
           ...finalWorkspacePlan.files.map((f) => f.filePath),
@@ -516,23 +552,28 @@ export function AIChat({
         ]).filter(Boolean));
       } else if (appliedMultiFile) {
         const appliedResult = await onApplyMultiFile?.(multiFileEdits);
+        if (isRequestCancelled()) return;
         appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0
           ? appliedResult
           : multiFileEdits.map((e) => e.filePath)).filter(Boolean));
       } else if (appliedSingleFile) {
         const appliedResult = await onApplyCode?.(firstCodeBlock!.code, firstCodeBlock?.language);
+        if (isRequestCancelled()) return;
         appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0 ? appliedResult : []).filter(Boolean));
       }
 
-      // Final guard with non-canned, file-specific summary
-      if (!assistantContent) {
+      // Never leak scaffold/code blobs into chat after apply; show a concise file summary instead.
+      if (appliedWorkspace || appliedMultiFile || appliedSingleFile) {
         assistantContent = appliedFiles.length > 0
           ? `Updated: ${appliedFiles.join(", ")}`
-          : descriptionText || "Done.";
+          : "Applied changes to workspace.";
+      } else if (!assistantContent) {
+        assistantContent = descriptionText || "Done.";
       }
 
       if (pushDeployIntent && onPushAndDeploy) {
         const pushResult = await onPushAndDeploy(input);
+        if (isRequestCancelled()) return;
         if (pushResult?.message) {
           assistantContent = `${assistantContent}\n\n${pushResult.message}`;
         }
@@ -548,6 +589,7 @@ export function AIChat({
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
+      if (isRequestCancelled()) return;
       const details = error instanceof Error ? error.message : "Unknown error";
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -557,7 +599,10 @@ export function AIChat({
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
-      setIsLoading(false);
+      cancelledRequestIdsRef.current.delete(requestId);
+      if (activeRequestIdRef.current === requestId) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -763,11 +808,28 @@ export function AIChat({
     if (!hasDeleteIntent) return [] as string[];
 
     const targets = new Set<string>();
+    const genericDeleteWords = new Set([
+      "all",
+      "everything",
+      "files",
+      "file",
+      "folders",
+      "folder",
+      "directories",
+      "directory",
+      "workspace",
+      "project",
+      "the",
+      "this",
+      "that",
+    ]);
 
     const commandPattern = /(?:delete|remove|rm)\s+(?:the\s+)?(?:file|folder|directory)?\s*[:\-]?\s*["'`]?([^\s"'`,;]+)["'`]?/gi;
     let match: RegExpExecArray | null;
     while ((match = commandPattern.exec(text)) !== null) {
-      const normalized = normalizeAssistantPath(match[1] || "");
+      const raw = (match[1] || "").trim().toLowerCase();
+      if (genericDeleteWords.has(raw)) continue;
+      const normalized = normalizeAssistantPath(raw);
       if (normalized && !normalized.startsWith("📁")) {
         targets.add(normalized);
       }
@@ -782,6 +844,47 @@ export function AIChat({
     }
 
     return Array.from(targets);
+  };
+
+  const isDeleteAllIntent = (text: string) => {
+    const hasDeleteIntent = /\b(delete|remove|rm)\b/i.test(text);
+    const hasAllIntent = /\b(all|everything|entire|whole)\b/i.test(text);
+    const hasWorkspaceScope = /\b(files?|folders?|directories?|workspace|project)\b/i.test(text);
+    return hasDeleteIntent && (hasAllIntent || hasWorkspaceScope);
+  };
+
+  const extractKnownWorkspacePaths = (allMessages: Message[], currentContext: any[]) => {
+    const paths = new Set<string>();
+
+    const addPath = (rawPath: string) => {
+      const normalized = normalizeAssistantPath(rawPath || "");
+      if (!normalized || normalized === "/") return;
+      paths.add(normalized);
+    };
+
+    allMessages.forEach((message) => {
+      (message.appliedFiles || []).forEach((item) => {
+        const withoutPrefix = item.replace(/^📁\s*/, "").replace(/^🗑️\s*/, "");
+        addPath(withoutPrefix);
+      });
+
+      const textMatches = message.content.match(/\/(?:[a-zA-Z0-9_.-]+\/?)+/g) || [];
+      textMatches.forEach((matchPath) => addPath(matchPath));
+
+      (message.context || []).forEach((ctx) => {
+        if (typeof ctx?.data?.filePath === "string") {
+          addPath(ctx.data.filePath);
+        }
+      });
+    });
+
+    currentContext.forEach((ctx) => {
+      if (typeof ctx?.data?.filePath === "string") {
+        addPath(ctx.data.filePath);
+      }
+    });
+
+    return Array.from(paths).sort((a, b) => b.length - a.length);
   };
 
   const renderMessageContent = (content: string) => {
@@ -1111,6 +1214,17 @@ export function AIChat({
                 onClick={clearHistory}
                 className="flex h-7 w-7 items-center justify-center rounded border border-black/20 hover:bg-muted"
                 title="Clear chat"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {isLoading && (
+              <button
+                type="button"
+                onClick={cancelOngoingRequest}
+                className="flex h-7 w-7 items-center justify-center rounded border border-black/20 bg-white hover:bg-muted"
+                title="Cancel response"
+                aria-label="Cancel response"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
