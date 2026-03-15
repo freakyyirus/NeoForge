@@ -59,35 +59,75 @@ Repos get indexed into Pinecone so you can search by meaning, not just text. Use
 ## Architecture
 
 ```
- Browser
- ┌─────────────────────────────────────────────────┐
- │  IDE Page                                        │
- │  ┌──────────┐  ┌────────┐  ┌──────┐  ┌───────┐ │
- │  │ AI Chat  │  │ Editor │  │ Term │  │Preview│ │
- │  └────┬─────┘  └───┬────┘  └──┬───┘  └───┬───┘ │
- │       └────────────┴──────────┴───────────┘     │
- │                     │  Next.js App Router        │
- └─────────────────────┼───────────────────────────┘
-                       │
-          ┌────────────┼─────────────┐
-          │            │             │
-    API Routes      Convex        WebContainer
-    /api/ai/*    (real-time      (runs Node.js
-    /api/github   file state)     in browser)
-    /api/reviews
-          │
-    ┌─────┴──────┐
-    │            │
- AI Models    PostgreSQL
- Claude /     (users, repos,
- Gemini /      reviews)
- OpenRouter
-          │
-       Pinecone
-    (code search)
+╔══════════════════════════════════════════════════════════════════════════╗
+║                          USER'S BROWSER                                  ║
+║                                                                          ║
+║  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  ║
+║  │   AI Chat   │  │ Code Editor  │  │   Terminal   │  │   Preview   │  ║
+║  │  (prompts,  │  │ (CodeMirror) │  │  (xterm.js)  │  │  (iframe /  │  ║
+║  │   replies)  │  │              │  │              │  │  dev server)│  ║
+║  └──────┬──────┘  └──────┬───────┘  └──────┬───────┘  └─────────────┘  ║
+║         │                │                 │                             ║
+║         └────────────────┴──────────┬──────┘                            ║
+║                                     │                                    ║
+║              ┌──────────────────────▼──────────────────────┐            ║
+║              │           Next.js App Router                 │            ║
+║              │        app/(ide)/[projectId]/page.tsx        │            ║
+║              └──────────────────────┬───────────────────────┘            ║
+║                                     │                                    ║
+║              ┌──────────────────────▼──────────────────────┐            ║
+║              │              WebContainer API                │            ║
+║              │   Node.js runtime running inside the tab     │            ║
+║              │   npm install · dev servers · file I/O       │            ║
+║              └─────────────────────────────────────────────┘            ║
+╚══════════════════════════════════════════════════════════════════════════╝
+                                     │
+                      HTTPS  (API routes)
+                                     │
+╔══════════════════════════════════════════════════════════════════════════╗
+║                         NEXT.JS SERVER                                   ║
+║                                                                          ║
+║   /api/ai/chat ──────────────────────────────► AI Provider               ║
+║   /api/ai/edit                                  Claude · Gemini           ║
+║   /api/ai/complete                              OpenRouter                ║
+║                                                                          ║
+║   /api/github/repos ─────────────────────────► GitHub API                ║
+║   /api/github/webhook                           (repos, PRs, commits)    ║
+║                                                                          ║
+║   /api/reviews ──────────────────────────────► Inngest                   ║
+║                                                 (background jobs:        ║
+║                                                  review generation,      ║
+║                                                  repo indexing)          ║
+║                                                                          ║
+║   /api/pinecone/index ────────────────────────► Pinecone                 ║
+║   /api/pinecone/search                          (vector search over      ║
+║                                                  indexed codebase)       ║
+║                                                                          ║
+║   /api/auth/* ───────────────────────────────► Better Auth               ║
+║                                                 GitHub OAuth 2.0         ║
+╚══════════════════════════════════════════════════════════════════════════╝
+                          │                    │
+            ┌─────────────▼──────┐   ┌─────────▼──────────┐
+            │    PostgreSQL       │   │      Convex         │
+            │    (via Prisma)     │   │   (real-time sync)  │
+            │                    │   │                     │
+            │  User              │   │  files              │
+            │  Repository        │   │  projects           │
+            │  Review            │   │  chatMessages       │
+            │  Subscription      │   │  terminals          │
+            └────────────────────┘   └─────────────────────┘
 ```
 
-The browser talks directly to Next.js API routes. The editor and file state live in Convex so everything stays in sync. The terminal and dev server run inside a WebContainer — no remote VM, no round trips. AI calls go server-side so API keys never touch the client.
+**How a request flows:**
+
+1. User types a prompt in AI Chat
+2. The IDE page sends it to `/api/ai/chat` with file context
+3. Server calls the AI model (Claude/Gemini/OpenRouter) — keys never leave the server
+4. Response comes back as a structured file diff
+5. Files are written directly into the editor and synced to Convex
+6. WebContainer picks up the changes and hot-reloads the preview in the same tab
+
+Everything that runs code — the terminal, the dev server, `npm install` — happens inside the WebContainer in the browser. No remote VM, no SSH, no round trips for execution.
 
 ---
 
