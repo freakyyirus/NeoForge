@@ -56,6 +56,41 @@ Repos get indexed into Pinecone so you can search by meaning, not just text. Use
 
 ---
 
+## Architecture
+
+```
+ Browser
+ ┌─────────────────────────────────────────────────┐
+ │  IDE Page                                        │
+ │  ┌──────────┐  ┌────────┐  ┌──────┐  ┌───────┐ │
+ │  │ AI Chat  │  │ Editor │  │ Term │  │Preview│ │
+ │  └────┬─────┘  └───┬────┘  └──┬───┘  └───┬───┘ │
+ │       └────────────┴──────────┴───────────┘     │
+ │                     │  Next.js App Router        │
+ └─────────────────────┼───────────────────────────┘
+                       │
+          ┌────────────┼─────────────┐
+          │            │             │
+    API Routes      Convex        WebContainer
+    /api/ai/*    (real-time      (runs Node.js
+    /api/github   file state)     in browser)
+    /api/reviews
+          │
+    ┌─────┴──────┐
+    │            │
+ AI Models    PostgreSQL
+ Claude /     (users, repos,
+ Gemini /      reviews)
+ OpenRouter
+          │
+       Pinecone
+    (code search)
+```
+
+The browser talks directly to Next.js API routes. The editor and file state live in Convex so everything stays in sync. The terminal and dev server run inside a WebContainer — no remote VM, no round trips. AI calls go server-side so API keys never touch the client.
+
+---
+
 ## Tech Stack
 
 - **Next.js 16** (App Router) + React 19
