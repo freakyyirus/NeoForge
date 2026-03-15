@@ -1182,7 +1182,13 @@ export default function IDEPage() {
     return "/" + resolved.join("/");
   };
 
-  const buildWorkspacePreviewDoc = (): { doc: string; entryFile: string | null; fileCount: number; isFramework: boolean } => {
+  const buildWorkspacePreviewDoc = (): {
+    doc: string;
+    entryFile: string | null;
+    fileCount: number;
+    isFramework: boolean;
+    runtimeEntryFile: string | null;
+  } => {
     // Merge saved files with the currently open file so preview works even before an explicit save
     const allFiles = {
       ...fileContentsRef.current,
@@ -1208,7 +1214,208 @@ export default function IDEPage() {
     }
 
     if (!entryPath) {
-      return { doc: "", entryFile: null, fileCount, isFramework };
+      const runtimeCandidates = [
+        "/src/main.tsx",
+        "/src/main.jsx",
+        "/src/index.tsx",
+        "/src/index.jsx",
+        "/main.tsx",
+        "/main.jsx",
+      ];
+      const runtimeEntry = runtimeCandidates.find((candidate) => allFiles[candidate] !== undefined) ?? null;
+      if (!runtimeEntry) {
+        return { doc: "", entryFile: null, fileCount, isFramework, runtimeEntryFile: null };
+      }
+
+      const virtualFiles = JSON.stringify(allFiles).replace(/<\//g, "<\\/");
+      const syntheticHtml = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head><body><div id="root"></div></body></html>`;
+      const runtimeDoc = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const __NEOFORGE_HTML__ = ${JSON.stringify(syntheticHtml)};
+      const __NEOFORGE_FILES__ = ${virtualFiles};
+      const __NEOFORGE_ENTRY__ = ${JSON.stringify(runtimeEntry)};
+
+      (function bootstrapRuntime() {
+        const parser = new DOMParser();
+        const parsed = parser.parseFromString(__NEOFORGE_HTML__, "text/html");
+        document.title = parsed.title || "NeoForge Preview";
+        document.body.innerHTML = parsed.body?.innerHTML || '<div id="root"></div>';
+
+        const files = __NEOFORGE_FILES__;
+        const moduleCache = {};
+        const cssInjected = new Set();
+
+        const normalizePathInRuntime = (value) => {
+          const replaced = String(value || "").replace(/\\\\/g, "/");
+          const prefixed = replaced.startsWith("/") ? replaced : `/${replaced}`;
+          return prefixed.replace(/\/+/g, "/");
+        };
+
+        const dirname = (value) => {
+          const normalized = normalizePathInRuntime(value);
+          const idx = normalized.lastIndexOf("/");
+          return idx <= 0 ? "/" : normalized.slice(0, idx);
+        };
+
+        const withExtensions = (basePath) => {
+          const normalized = normalizePathInRuntime(basePath);
+          const extCandidates = [
+            normalized,
+            `${normalized}.tsx`,
+            `${normalized}.ts`,
+            `${normalized}.jsx`,
+            `${normalized}.js`,
+            `${normalized}.mjs`,
+            `${normalized}.json`,
+            `${normalized}.css`,
+            `${normalized}/index.tsx`,
+            `${normalized}/index.ts`,
+            `${normalized}/index.jsx`,
+            `${normalized}/index.js`,
+          ];
+          return extCandidates.find((candidate) => Object.prototype.hasOwnProperty.call(files, candidate)) || null;
+        };
+
+        const resolveSpecifier = (fromPath, specifier) => {
+          if (!specifier) return null;
+          if (specifier.startsWith("http://") || specifier.startsWith("https://") || specifier.startsWith("//")) {
+            return `@external:${specifier}`;
+          }
+          if (!specifier.startsWith(".") && !specifier.startsWith("/")) {
+            return `@npm:${specifier}`;
+          }
+
+          const sourceDir = dirname(fromPath);
+          const combined = specifier.startsWith("/") ? specifier : `${sourceDir}/${specifier}`;
+          const segments = combined.split("/").filter(Boolean);
+          const resolved = [];
+          segments.forEach((segment) => {
+            if (segment === ".") return;
+            if (segment === "..") {
+              resolved.pop();
+              return;
+            }
+            resolved.push(segment);
+          });
+
+          return withExtensions(`/${resolved.join("/")}`);
+        };
+
+        const injectCss = (path) => {
+          const normalized = normalizePathInRuntime(path);
+          if (cssInjected.has(normalized)) return;
+          const css = files[normalized];
+          if (typeof css !== "string") return;
+          cssInjected.add(normalized);
+          const style = document.createElement("style");
+          style.setAttribute("data-neoforge-css", normalized);
+          style.textContent = css;
+          document.head.appendChild(style);
+        };
+
+        const requireNpm = (specifier) => {
+          if (specifier === "react") return window.React;
+          if (specifier === "react-dom") return window.ReactDOM;
+          if (specifier === "react-dom/client") {
+            return {
+              createRoot: window.ReactDOM?.createRoot
+                ? window.ReactDOM.createRoot.bind(window.ReactDOM)
+                : (container) => ({ render: (node) => window.ReactDOM.render(node, container) }),
+            };
+          }
+          throw new Error(`Unsupported package in runtime preview: ${specifier}`);
+        };
+
+        const executeModule = (modulePath) => {
+          const normalized = normalizePathInRuntime(modulePath);
+          if (moduleCache[normalized]) return moduleCache[normalized];
+
+          const source = files[normalized];
+          if (typeof source !== "string") {
+            throw new Error(`Module not found: ${normalized}`);
+          }
+
+          if (normalized.endsWith(".css")) {
+            injectCss(normalized);
+            const cssExports = {};
+            moduleCache[normalized] = cssExports;
+            return cssExports;
+          }
+
+          if (normalized.endsWith(".json")) {
+            const jsonExports = JSON.parse(source);
+            moduleCache[normalized] = jsonExports;
+            return jsonExports;
+          }
+
+          const module = { exports: {} };
+          moduleCache[normalized] = module.exports;
+
+          const transpiled = window.Babel.transform(
+            source
+              .replace(/import\\.meta\\.env\\.[A-Z0-9_]+/g, "undefined")
+              .replace(/import\\.meta\\.env/g, "{}")
+              .replace(/import\\.meta\\.hot/g, "undefined"),
+            {
+              filename: normalized,
+              presets: ["env", "react", "typescript"],
+              plugins: ["transform-modules-commonjs"],
+              sourceType: "module",
+            }
+          ).code;
+
+          const localRequire = (specifier) => {
+            const resolved = resolveSpecifier(normalized, specifier);
+            if (!resolved) {
+              throw new Error(`Unable to resolve '${specifier}' from ${normalized}`);
+            }
+            if (resolved.startsWith("@npm:")) {
+              return requireNpm(resolved.slice(5));
+            }
+            if (resolved.startsWith("@external:")) {
+              throw new Error(`External module import is not supported in runtime preview: ${specifier}`);
+            }
+            return executeModule(resolved);
+          };
+
+          const wrapped = new Function("require", "module", "exports", transpiled + `\n//# sourceURL=${normalized}`);
+          wrapped(localRequire, module, module.exports);
+          moduleCache[normalized] = module.exports;
+          return module.exports;
+        };
+
+        try {
+          executeModule(__NEOFORGE_ENTRY__);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          document.body.innerHTML = `
+            <div style="padding:16px;font-family:ui-monospace,Menlo,Consolas,monospace;">
+              <h3 style="margin:0 0 8px;">Runtime preview failed</h3>
+              <pre style="white-space:pre-wrap;background:#111;color:#f87171;padding:12px;border-radius:8px;">${message.replace(/</g, "&lt;")}</pre>
+            </div>`;
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+
+      return {
+        doc: runtimeDoc,
+        entryFile: runtimeEntry,
+        fileCount,
+        isFramework,
+        runtimeEntryFile: runtimeEntry,
+      };
     }
 
     let html = allFiles[entryPath];
@@ -1241,7 +1448,212 @@ export default function IDEPage() {
       }
     );
 
-    return { doc: html, entryFile: entryPath, fileCount, isFramework };
+    const localScriptSrcMatch = html.match(/<script[^>]*src=["']([^"']+)["'][^>]*>/i);
+    const localScriptPath = localScriptSrcMatch
+      ? resolveAssetPath(entryPath, localScriptSrcMatch[1])
+      : "";
+    const localRuntimeEntry = localScriptPath && allFiles[localScriptPath] !== undefined ? localScriptPath : null;
+
+    if (localRuntimeEntry && /\.(tsx|ts|jsx)$/i.test(localRuntimeEntry)) {
+      const htmlWithoutLocalScripts = html.replace(
+        /<script[^>]*src=["']([^"']+)["'][^>]*>[\s\S]*?<\/script>/gi,
+        (full, src: string) => {
+          const resolved = resolveAssetPath(entryPath!, src || "");
+          if (!resolved || allFiles[resolved] === undefined) return full;
+          return "";
+        }
+      );
+
+      const virtualFiles = JSON.stringify(allFiles).replace(/<\//g, "<\\/");
+      const runtimeDoc = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body>
+    <script>
+      const __NEOFORGE_HTML__ = ${JSON.stringify(htmlWithoutLocalScripts)};
+      const __NEOFORGE_FILES__ = ${virtualFiles};
+      const __NEOFORGE_ENTRY__ = ${JSON.stringify(localRuntimeEntry)};
+
+      (function bootstrapRuntime() {
+        const parser = new DOMParser();
+        const parsed = parser.parseFromString(__NEOFORGE_HTML__, "text/html");
+        document.title = parsed.title || "NeoForge Preview";
+        document.body.innerHTML = parsed.body?.innerHTML || '<div id="root"></div>';
+
+        const files = __NEOFORGE_FILES__;
+        const moduleCache = {};
+        const cssInjected = new Set();
+
+        const normalizePathInRuntime = (value) => {
+          const replaced = String(value || "").replace(/\\\\/g, "/");
+          const prefixed = replaced.startsWith("/") ? replaced : `/${replaced}`;
+          return prefixed.replace(/\/+/g, "/");
+        };
+
+        const dirname = (value) => {
+          const normalized = normalizePathInRuntime(value);
+          const idx = normalized.lastIndexOf("/");
+          return idx <= 0 ? "/" : normalized.slice(0, idx);
+        };
+
+        const withExtensions = (basePath) => {
+          const normalized = normalizePathInRuntime(basePath);
+          const extCandidates = [
+            normalized,
+            `${normalized}.tsx`,
+            `${normalized}.ts`,
+            `${normalized}.jsx`,
+            `${normalized}.js`,
+            `${normalized}.mjs`,
+            `${normalized}.json`,
+            `${normalized}.css`,
+            `${normalized}/index.tsx`,
+            `${normalized}/index.ts`,
+            `${normalized}/index.jsx`,
+            `${normalized}/index.js`,
+          ];
+          return extCandidates.find((candidate) => Object.prototype.hasOwnProperty.call(files, candidate)) || null;
+        };
+
+        const resolveSpecifier = (fromPath, specifier) => {
+          if (!specifier) return null;
+          if (specifier.startsWith("http://") || specifier.startsWith("https://") || specifier.startsWith("//")) {
+            return `@external:${specifier}`;
+          }
+          if (!specifier.startsWith(".") && !specifier.startsWith("/")) {
+            return `@npm:${specifier}`;
+          }
+
+          const sourceDir = dirname(fromPath);
+          const combined = specifier.startsWith("/") ? specifier : `${sourceDir}/${specifier}`;
+          const segments = combined.split("/").filter(Boolean);
+          const resolved = [];
+          segments.forEach((segment) => {
+            if (segment === ".") return;
+            if (segment === "..") {
+              resolved.pop();
+              return;
+            }
+            resolved.push(segment);
+          });
+
+          return withExtensions(`/${resolved.join("/")}`);
+        };
+
+        const injectCss = (path) => {
+          const normalized = normalizePathInRuntime(path);
+          if (cssInjected.has(normalized)) return;
+          const css = files[normalized];
+          if (typeof css !== "string") return;
+          cssInjected.add(normalized);
+          const style = document.createElement("style");
+          style.setAttribute("data-neoforge-css", normalized);
+          style.textContent = css;
+          document.head.appendChild(style);
+        };
+
+        const requireNpm = (specifier) => {
+          if (specifier === "react") return window.React;
+          if (specifier === "react-dom") return window.ReactDOM;
+          if (specifier === "react-dom/client") {
+            return {
+              createRoot: window.ReactDOM?.createRoot
+                ? window.ReactDOM.createRoot.bind(window.ReactDOM)
+                : (container) => ({ render: (node) => window.ReactDOM.render(node, container) }),
+            };
+          }
+          throw new Error(`Unsupported package in runtime preview: ${specifier}`);
+        };
+
+        const executeModule = (modulePath) => {
+          const normalized = normalizePathInRuntime(modulePath);
+          if (moduleCache[normalized]) return moduleCache[normalized];
+
+          const source = files[normalized];
+          if (typeof source !== "string") {
+            throw new Error(`Module not found: ${normalized}`);
+          }
+
+          if (normalized.endsWith(".css")) {
+            injectCss(normalized);
+            const cssExports = {};
+            moduleCache[normalized] = cssExports;
+            return cssExports;
+          }
+
+          if (normalized.endsWith(".json")) {
+            const jsonExports = JSON.parse(source);
+            moduleCache[normalized] = jsonExports;
+            return jsonExports;
+          }
+
+          const module = { exports: {} };
+          moduleCache[normalized] = module.exports;
+
+          const transpiled = window.Babel.transform(
+            source
+              .replace(/import\\.meta\\.env\\.[A-Z0-9_]+/g, "undefined")
+              .replace(/import\\.meta\\.env/g, "{}")
+              .replace(/import\\.meta\\.hot/g, "undefined"),
+            {
+              filename: normalized,
+              presets: ["env", "react", "typescript"],
+              plugins: ["transform-modules-commonjs"],
+              sourceType: "module",
+            }
+          ).code;
+
+          const localRequire = (specifier) => {
+            const resolved = resolveSpecifier(normalized, specifier);
+            if (!resolved) {
+              throw new Error(`Unable to resolve '${specifier}' from ${normalized}`);
+            }
+            if (resolved.startsWith("@npm:")) {
+              return requireNpm(resolved.slice(5));
+            }
+            if (resolved.startsWith("@external:")) {
+              throw new Error(`External module import is not supported in runtime preview: ${specifier}`);
+            }
+            return executeModule(resolved);
+          };
+
+          const wrapped = new Function("require", "module", "exports", transpiled + `\n//# sourceURL=${normalized}`);
+          wrapped(localRequire, module, module.exports);
+          moduleCache[normalized] = module.exports;
+          return module.exports;
+        };
+
+        try {
+          executeModule(__NEOFORGE_ENTRY__);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          document.body.innerHTML = `
+            <div style="padding:16px;font-family:ui-monospace,Menlo,Consolas,monospace;">
+              <h3 style="margin:0 0 8px;">Runtime preview failed</h3>
+              <pre style="white-space:pre-wrap;background:#111;color:#f87171;padding:12px;border-radius:8px;">${message.replace(/</g, "&lt;")}</pre>
+            </div>`;
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+
+      return {
+        doc: runtimeDoc,
+        entryFile: entryPath,
+        fileCount,
+        isFramework,
+        runtimeEntryFile: localRuntimeEntry,
+      };
+    }
+
+    return { doc: html, entryFile: entryPath, fileCount, isFramework, runtimeEntryFile: null };
   };
 
   const buildLivePreviewDoc = () => {
@@ -1787,15 +2199,15 @@ ${fileContent}
                       {/* Live Workspace mode */}
                       {previewMode === "app" && (() => {
                         if (!ws) return null;
-                        const { doc, entryFile, fileCount, isFramework } = ws;
+                        const { doc, entryFile, fileCount, isFramework, runtimeEntryFile } = ws;
                         const fallbackDoc = buildLivePreviewDoc();
 
                         if (isFramework && !doc) {
                           return (
                             <>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-yellow-800">framework fallback preview</span>
-                                <span>Run your dev server for full app rendering.</span>
+                                <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-yellow-800">no runnable entry found</span>
+                                <span>Showing file-level fallback preview.</span>
                               </div>
                               <iframe
                                 key={previewRefreshSignal}
@@ -1831,7 +2243,9 @@ ${fileContent}
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{entryFile}</span>
                               <span>{fileCount} file{fileCount !== 1 ? "s" : ""} in workspace</span>
-                              {isFramework && <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-yellow-800">framework — static preview only</span>}
+                              {isFramework && runtimeEntryFile && (
+                                <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-800">framework runtime preview</span>
+                              )}
                             </div>
                             <iframe
                               key={previewRefreshSignal}
