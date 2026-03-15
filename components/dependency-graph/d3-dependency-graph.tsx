@@ -54,6 +54,40 @@ interface D3DependencyGraphProps {
   height?: number;
 }
 
+function computeSequenceLevels(nodes: GraphNode[], links: GraphLink[]): Map<string, number> {
+  const nodeIds = nodes.map((n) => n.id);
+  const level = new Map<string, number>(nodeIds.map((id) => [id, 0]));
+  const indegree = new Map<string, number>(nodeIds.map((id) => [id, 0]));
+  const outgoing = new Map<string, string[]>(nodeIds.map((id) => [id, []]));
+
+  for (const link of links) {
+    const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+    const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+    if (!indegree.has(sourceId) || !indegree.has(targetId)) continue;
+    indegree.set(targetId, (indegree.get(targetId) || 0) + 1);
+    outgoing.get(sourceId)?.push(targetId);
+  }
+
+  const queue: string[] = [];
+  for (const id of nodeIds) {
+    if ((indegree.get(id) || 0) === 0) queue.push(id);
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const currentLevel = level.get(current) || 0;
+    for (const next of outgoing.get(current) || []) {
+      level.set(next, Math.max(level.get(next) || 0, currentLevel + 1));
+      indegree.set(next, (indegree.get(next) || 0) - 1);
+      if ((indegree.get(next) || 0) === 0) {
+        queue.push(next);
+      }
+    }
+  }
+
+  return level;
+}
+
 function buildDAGGraph(graph: GraphData): GraphData {
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   const adjacency = new Map<string, string[]>();
@@ -282,8 +316,8 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
-      .wheelDelta((event) => -event.deltaY * 0.0008)
-      .duration(360)
+      .wheelDelta((event) => -event.deltaY * 0.00045)
+      .duration(520)
       .interpolate(d3.interpolateZoom)
       .on('zoom', (event) => {
         g.attr('transform', event.transform);
@@ -331,6 +365,8 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
 
     const nodes = filteredNodes.map(d => ({ ...d }));
     const links = safeLinks.map(d => ({ ...d }));
+    const sequenceLevels = computeSequenceLevels(nodes, links);
+    const maxLevel = Math.max(0, ...Array.from(sequenceLevels.values()));
 
     const simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(links).id((d: any) => d.id).distance(155))
@@ -339,6 +375,16 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       .force('collision', d3.forceCollide().radius(64))
       .alphaDecay(0.08)
       .velocityDecay(0.35);
+
+    if (graphMode === 'dag') {
+      const leftPad = 90;
+      const span = Math.max(1, width - leftPad * 2);
+      simulation.force('sequence-x', d3.forceX<GraphNode>((d) => {
+        const level = sequenceLevels.get(d.id) || 0;
+        const t = maxLevel === 0 ? 0.5 : level / maxLevel;
+        return leftPad + t * span;
+      }).strength(0.35));
+    }
 
     simulationRef.current = simulation;
 
@@ -351,6 +397,23 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       .attr('stroke-opacity', 0.9)
       .attr('stroke-width', d => (d.relation === 'cross-boundary' ? 2.4 : 2.1))
       .attr('marker-end', 'url(#arrow)');
+
+    const linkLabel = g.append('g')
+      .attr('class', 'link-labels')
+      .selectAll('text')
+      .data(links)
+      .join('text')
+      .text((d) => {
+        const sourceId = typeof d.source === 'string' ? d.source : d.source.id;
+        const targetId = typeof d.target === 'string' ? d.target : d.target.id;
+        const sourceLevel = (sequenceLevels.get(sourceId) || 0) + 1;
+        const targetLevel = (sequenceLevels.get(targetId) || 0) + 1;
+        return `S${sourceLevel}->S${targetLevel}`;
+      })
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '9px')
+      .attr('fill', '#9ca3af')
+      .attr('opacity', graphMode === 'dag' ? 0.95 : 0);
 
     const node = g.append('g')
       .attr('class', 'nodes')
@@ -398,6 +461,15 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       .attr('font-weight', '700');
 
     node.append('text')
+      .text(d => `S${(sequenceLevels.get(d.id) || 0) + 1}`)
+      .attr('x', 0)
+      .attr('y', 4)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '10px')
+      .attr('fill', '#e5e7eb')
+      .attr('font-weight', '800');
+
+    node.append('text')
       .text(d => (d.language || 'unknown').toUpperCase())
       .attr('x', 0)
       .attr('y', 76)
@@ -433,6 +505,10 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
         .attr('x2', d => (d.target as GraphNode).x ?? 0)
         .attr('y2', d => (d.target as GraphNode).y ?? 0);
 
+      linkLabel
+        .attr('x', d => (((d.source as GraphNode).x ?? 0) + ((d.target as GraphNode).x ?? 0)) / 2)
+        .attr('y', d => ((((d.source as GraphNode).y ?? 0) + ((d.target as GraphNode).y ?? 0)) / 2) - 6);
+
       node.attr('transform', d => `translate(${d.x},${d.y})`);
     });
 
@@ -462,10 +538,14 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     if (svgRef.current && zoomBehaviorRef.current) {
       const svg = d3.select(svgRef.current);
       const zoomBehavior = zoomBehaviorRef.current;
+      const current = d3.zoomTransform(svgRef.current);
+      const rect = svgRef.current.getBoundingClientRect();
+      const targetScale = Math.max(0.1, Math.min(4, current.k * factor));
       svg.interrupt();
-      svg.transition().duration(420).ease(d3.easeCubicInOut).call(
-        (zoomBehavior.scaleBy as any),
-        factor
+      svg.transition().duration(620).ease(d3.easeSinInOut).call(
+        (zoomBehavior.scaleTo as any),
+        targetScale,
+        [rect.width / 2, rect.height / 2]
       );
     }
   };
@@ -475,7 +555,7 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       const svg = d3.select(svgRef.current);
       const zoomBehavior = zoomBehaviorRef.current;
       svg.interrupt();
-      svg.transition().duration(480).ease(d3.easeCubicInOut).call(
+      svg.transition().duration(700).ease(d3.easeSinInOut).call(
         (zoomBehavior.transform as any),
         transform
       );
@@ -483,11 +563,11 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
   };
 
   const zoomIn = () => {
-    applySmoothScale(1.18);
+    applySmoothScale(1.12);
   };
 
   const zoomOut = () => {
-    applySmoothScale(0.84);
+    applySmoothScale(0.89);
   };
 
   const resetZoom = () => {
