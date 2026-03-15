@@ -219,7 +219,33 @@ const kindConfig: Record<string, { color: string; icon: React.ReactNode; label: 
   go: { color: '#06b6d4', icon: <Code className="w-3 h-3" />, label: 'Go' },
   sql: { color: '#a855f7', icon: <Database className="w-3 h-3" />, label: 'SQL' },
   prisma: { color: '#ec4899', icon: <Database className="w-3 h-3" />, label: 'Prisma' },
+  mixed: { color: '#fb7185', icon: <Code className="w-3 h-3" />, label: 'Mixed' },
 };
+
+const vibrantFallbackPalette = [
+  '#22d3ee', '#fb7185', '#a78bfa', '#34d399', '#f59e0b', '#60a5fa', '#f43f5e', '#2dd4bf',
+];
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getNodeBaseColor(kind: string, id: string): string {
+  if (kindConfig[kind]?.color) return kindConfig[kind].color;
+  return vibrantFallbackPalette[hashString(`${kind}:${id}`) % vibrantFallbackPalette.length];
+}
+
+function getNodeAccentColor(baseColor: string): string {
+  const hsl = d3.hsl(baseColor);
+  hsl.s = Math.min(1, hsl.s * 1.12 + 0.08);
+  hsl.l = Math.min(0.72, hsl.l + 0.12);
+  return hsl.formatHex();
+}
 
 const relationColors: Record<string, string> = {
   calls: '#22c55e',
@@ -390,30 +416,14 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
 
     const link = g.append('g')
       .attr('class', 'links')
-      .selectAll('line')
+      .selectAll('path')
       .data(links)
-      .join('line')
+      .join('path')
+      .attr('fill', 'none')
       .attr('stroke', '#5b6470')
       .attr('stroke-opacity', 0.9)
       .attr('stroke-width', d => (d.relation === 'cross-boundary' ? 2.4 : 2.1))
       .attr('marker-end', 'url(#arrow)');
-
-    const linkLabel = g.append('g')
-      .attr('class', 'link-labels')
-      .selectAll('text')
-      .data(links)
-      .join('text')
-      .text((d) => {
-        const sourceId = typeof d.source === 'string' ? d.source : d.source.id;
-        const targetId = typeof d.target === 'string' ? d.target : d.target.id;
-        const sourceLevel = (sequenceLevels.get(sourceId) || 0) + 1;
-        const targetLevel = (sequenceLevels.get(targetId) || 0) + 1;
-        return `S${sourceLevel}->S${targetLevel}`;
-      })
-      .attr('text-anchor', 'middle')
-      .attr('font-size', '9px')
-      .attr('fill', '#9ca3af')
-      .attr('opacity', graphMode === 'dag' ? 0.95 : 0);
 
     const node = g.append('g')
       .attr('class', 'nodes')
@@ -437,18 +447,32 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
           d.fy = null;
         }) as any);
 
-    // Node circles
+    // Two-tone nodes for a more vibrant visual style.
     node.append('circle')
-      .attr('r', 30)
+      .attr('class', 'outer-node')
+      .attr('r', 31)
       .attr('fill', d => {
-        const color = kindConfig[d.kind]?.color || '#6b7280';
+        const color = getNodeBaseColor(d.kind, d.id);
         const parsed = d3.color(color);
         if (!parsed) return 'rgba(107,114,128,0.18)';
-        parsed.opacity = 0.18;
+        parsed.opacity = 0.3;
         return parsed.toString();
       })
-      .attr('stroke', d => kindConfig[d.kind]?.color || '#6b7280')
-      .attr('stroke-width', 4);
+      .attr('stroke', d => getNodeAccentColor(getNodeBaseColor(d.kind, d.id)))
+      .attr('stroke-width', 4.6);
+
+    node.append('circle')
+      .attr('class', 'inner-node')
+      .attr('r', 18)
+      .attr('fill', d => {
+        const accent = getNodeAccentColor(getNodeBaseColor(d.kind, d.id));
+        const parsed = d3.color(accent);
+        if (!parsed) return 'rgba(255,255,255,0.2)';
+        parsed.opacity = 0.25;
+        return parsed.toString();
+      })
+      .attr('stroke', d => getNodeAccentColor(getNodeBaseColor(d.kind, d.id)))
+      .attr('stroke-width', 1.6);
 
     // Node labels
     node.append('text')
@@ -459,15 +483,6 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       .attr('font-size', '11px')
       .attr('fill', '#f3f4f6')
       .attr('font-weight', '700');
-
-    node.append('text')
-      .text(d => `S${(sequenceLevels.get(d.id) || 0) + 1}`)
-      .attr('x', 0)
-      .attr('y', 4)
-      .attr('text-anchor', 'middle')
-      .attr('font-size', '10px')
-      .attr('fill', '#e5e7eb')
-      .attr('font-weight', '800');
 
     node.append('text')
       .text(d => (d.language || 'unknown').toUpperCase())
@@ -486,28 +501,31 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
 
     node.on('mouseenter', (event, d) => {
       setHoveredNode(d);
-      d3.select(event.currentTarget).select('circle')
+      d3.select(event.currentTarget).select('.outer-node')
         .attr('stroke', '#f9fafb')
-        .attr('stroke-width', 4.5);
+        .attr('stroke-width', 5.2);
     });
 
     node.on('mouseleave', (event, d) => {
       setHoveredNode(null);
-      d3.select(event.currentTarget).select('circle')
-        .attr('stroke', kindConfig[d.kind]?.color || '#6b7280')
-        .attr('stroke-width', 4);
+      d3.select(event.currentTarget).select('.outer-node')
+        .attr('stroke', getNodeAccentColor(getNodeBaseColor(d.kind, d.id)))
+        .attr('stroke-width', 4.6);
     });
 
     simulation.on('tick', () => {
       link
-        .attr('x1', d => (d.source as GraphNode).x ?? 0)
-        .attr('y1', d => (d.source as GraphNode).y ?? 0)
-        .attr('x2', d => (d.target as GraphNode).x ?? 0)
-        .attr('y2', d => (d.target as GraphNode).y ?? 0);
-
-      linkLabel
-        .attr('x', d => (((d.source as GraphNode).x ?? 0) + ((d.target as GraphNode).x ?? 0)) / 2)
-        .attr('y', d => ((((d.source as GraphNode).y ?? 0) + ((d.target as GraphNode).y ?? 0)) / 2) - 6);
+        .attr('d', d => {
+          const source = d.source as GraphNode;
+          const target = d.target as GraphNode;
+          const x1 = source.x ?? 0;
+          const y1 = source.y ?? 0;
+          const x2 = target.x ?? 0;
+          const y2 = target.y ?? 0;
+          const mx = (x1 + x2) / 2;
+          // Gentle horizontal bend gives a flowchart-like wire feel.
+          return `M ${x1},${y1} C ${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+        });
 
       node.attr('transform', d => `translate(${d.x},${d.y})`);
     });
@@ -692,7 +710,7 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
               <div className="flex items-center gap-1 mt-1">
                 <div 
                   className="w-2 h-2 rounded-full" 
-                  style={{ backgroundColor: kindConfig[hoveredNode.kind]?.color }}
+                  style={{ backgroundColor: getNodeBaseColor(hoveredNode.kind, hoveredNode.id) }}
                 />
                 <span>{kindConfig[hoveredNode.kind]?.label || hoveredNode.kind}</span>
               </div>
