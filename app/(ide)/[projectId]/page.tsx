@@ -2482,6 +2482,7 @@ ${fileContent}
 
               <TabsContent value="dependencies" className="m-0 min-h-0 flex-1 p-2 overflow-auto">
                 <D3DependencyGraph 
+                  files={{ ...fileContentsRef.current }}
                   onNodeClick={(node) => {
                     setSelectedFile(node.filePath);
                     if (fileContentsRef.current[node.filePath] !== undefined) {

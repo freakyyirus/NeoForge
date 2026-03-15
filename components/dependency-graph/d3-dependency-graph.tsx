@@ -48,6 +48,7 @@ interface GraphData {
 
 interface D3DependencyGraphProps {
   projectRoot?: string;
+  files?: Record<string, string>;
   onNodeClick?: (node: GraphNode) => void;
   height?: number;
 }
@@ -70,7 +71,7 @@ const relationColors: Record<string, string> = {
   defines: '#a855f7',
 };
 
-export function D3DependencyGraph({ projectRoot, onNodeClick, height = 500 }: D3DependencyGraphProps) {
+export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 500 }: D3DependencyGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
@@ -87,10 +88,13 @@ export function D3DependencyGraph({ projectRoot, onNodeClick, height = 500 }: D3
     setError(null);
     
     try {
-      const response = await fetch('/api/dependencies/graph', {
+      const hasWorkspaceFiles = Boolean(files && Object.keys(files).length > 0);
+      const response = await fetch(hasWorkspaceFiles ? '/api/dependency-graph' : '/api/dependencies/graph', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectRoot: projectRoot || '.', format: 'd3' }),
+        body: hasWorkspaceFiles
+          ? JSON.stringify({ files })
+          : JSON.stringify({ projectRoot: projectRoot || '.', format: 'd3' }),
       });
       
       if (!response.ok) {
@@ -98,13 +102,34 @@ export function D3DependencyGraph({ projectRoot, onNodeClick, height = 500 }: D3
       }
       
       const data = await response.json();
-      setGraphData(data.graph);
+
+      if (hasWorkspaceFiles) {
+        const legacyGraph = data.graph || { nodes: [], edges: [] };
+        const normalized: GraphData = {
+          nodes: (legacyGraph.nodes || []).map((node: any) => ({
+            id: node.id,
+            label: node.name || node.id,
+            kind: (node.language || 'unknown').toLowerCase(),
+            language: node.language || 'unknown',
+            filePath: node.filePath || node.id,
+            line: 1,
+          })),
+          links: (legacyGraph.edges || []).map((edge: any) => ({
+            source: edge.source,
+            target: edge.target,
+            relation: edge.type || 'dependency',
+          })),
+        };
+        setGraphData(normalized);
+      } else {
+        setGraphData(data.graph);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
-  }, [projectRoot]);
+  }, [files, projectRoot]);
 
   useEffect(() => {
     fetchGraph();
