@@ -80,6 +80,7 @@ interface FileTreeItemProps {
   selectedFile: string | null;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
+  onStartCreate: (parentPath: string, isDirectory: boolean) => void;
   onCreate: (parentPath: string, name: string, isDirectory: boolean) => void;
   onRename: (oldPath: string, newPath: string) => void;
   onDelete: (path: string) => void;
@@ -91,6 +92,7 @@ function FileTreeItem({
   selectedFile,
   onSelect,
   onToggle,
+  onStartCreate,
   onCreate,
   onRename,
   onDelete,
@@ -168,8 +170,7 @@ function FileTreeItem({
             className="rounded p-0.5 hover:bg-black/10"
             onClick={(e) => {
               e.stopPropagation();
-              const name = prompt(item.isDirectory ? "Enter folder name:" : "Enter file name:");
-              if (name) onCreate(item.path, name, item.isDirectory);
+              onStartCreate(item.path, item.isDirectory);
             }}
           >
             <Plus className="h-3 w-3" />
@@ -222,6 +223,7 @@ function FileTreeItem({
               selectedFile={selectedFile}
               onSelect={onSelect}
               onToggle={onToggle}
+              onStartCreate={onStartCreate}
               onCreate={onCreate}
               onRename={onRename}
               onDelete={onDelete}
@@ -243,6 +245,29 @@ export function FileExplorer({
   className,
 }: FileExplorerProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(["/"]));
+  const [createDraft, setCreateDraft] = useState<{
+    parentPath: string;
+    isDirectory: boolean;
+  } | null>(null);
+  const [createName, setCreateName] = useState("");
+
+  const startCreate = useCallback((parentPath: string, isDirectory: boolean) => {
+    setCreateDraft({ parentPath, isDirectory });
+    setCreateName("");
+  }, []);
+
+  const commitCreate = useCallback(() => {
+    if (!createDraft) return;
+    const trimmed = createName.trim();
+    if (!trimmed) {
+      setCreateDraft(null);
+      setCreateName("");
+      return;
+    }
+    onFileCreate(createDraft.parentPath, trimmed, createDraft.isDirectory);
+    setCreateDraft(null);
+    setCreateName("");
+  }, [createDraft, createName, onFileCreate]);
 
   const handleToggle = useCallback((path: string) => {
     setExpandedDirs((prev) => {
@@ -272,25 +297,45 @@ export function FileExplorer({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              const name = prompt("Enter folder name:");
-              if (name) onFileCreate("/", name, true);
-            }}
+            onClick={() => startCreate("/", true)}
           >
             <Plus className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              const name = prompt("Enter file name:");
-              if (name) onFileCreate("/", name, false);
-            }}
+            onClick={() => startCreate("/", false)}
           >
             <FileCode className="h-4 w-4" />
           </Button>
         </div>
       </div>
+      {createDraft && (
+        <div className="border-b-2 border-black bg-muted/60 px-3 py-2">
+          <div className="flex items-center gap-2 rounded border-2 border-black bg-white px-2 py-1">
+            <span className="text-xs font-bold text-muted-foreground">
+              {createDraft.isDirectory ? "New folder" : "New file"}
+            </span>
+            <Input
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitCreate();
+                if (e.key === "Escape") {
+                  setCreateDraft(null);
+                  setCreateName("");
+                }
+              }}
+              placeholder={createDraft.isDirectory ? "folder-name" : "file-name.tsx"}
+              className="h-7 border-0 p-0 text-sm focus-visible:ring-0"
+              autoFocus
+            />
+            <Button variant="ghost" size="sm" onClick={commitCreate}>
+              Create
+            </Button>
+          </div>
+        </div>
+      )}
       <ScrollArea className="flex-1 p-2">
         {expandFileTree(files).map((item) => (
           <FileTreeItem
@@ -300,6 +345,7 @@ export function FileExplorer({
             selectedFile={selectedFile}
             onSelect={onFileSelect}
             onToggle={handleToggle}
+            onStartCreate={startCreate}
             onCreate={onFileCreate}
             onRename={onFileRename}
             onDelete={onFileDelete}

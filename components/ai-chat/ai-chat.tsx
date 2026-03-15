@@ -436,16 +436,20 @@ export function AIChat({
           ? [...context, { type: "editor_errors", data: editorErrors }]
           : context;
 
-      const workspaceIntent = /\b(folder|folders|file|files|project|scaffold|structure|setup|create|edit|build|make|write|generate|add|implement)\b/i.test(input);
+      const stopIntent = /\b(stop|pause|hold|wait|cancel)\b/i.test(input);
+      const workspaceIntent = !stopIntent && /\b(folder|folders|file|files|project|scaffold|structure|setup|create|edit|build|make|write|generate|add|implement|delete|remove|rm|app|website|webpage|product|full[-\s]?stack|backend|frontend|api|dashboard)\b/i.test(input);
       const pushDeployIntent = /\b(push|commit|deploy|redeploy|publish|ship)\b/i.test(input);
       const codeInstruction = [
-        "STRICT OUTPUT RULES — follow exactly, no exceptions:",
-        "1. Begin your reply with 1-2 plain-English sentences ONLY. State which file(s) you are creating or editing and briefly what they do. These sentences must contain NO code, NO JSON, NO backticks, NO markdown fences.",
-        "2. All code MUST be placed inside fenced code blocks. NEVER write code, file contents, or JSON as plain prose text.",
-        "3. For multi-file / scaffold requests: place all files in ONE fenced ```json block with this exact shape:",
+        "AUTONOMOUS BUILD MODE — behave like a coding copilot that directly builds the product:",
+        "1. Do NOT ask which component/library to use unless absolutely required to proceed. Make reasonable engineering choices and implement immediately.",
+        "2. If user asks for app/website/product/full-stack work, generate complete working structure directly (frontend + backend/API + config needed for run/preview).",
+        "3. Begin with 1-2 plain-English sentences ONLY: what you changed and which files were touched. No code in prose.",
+        "4. All code MUST be inside fenced code blocks. NEVER output code/JSON as plain prose.",
+        "5. For multi-file / scaffold requests: place all files in ONE fenced ```json block with this exact shape:",
         '   {"folders":["/src"],"files":[{"path":"/index.html","content":"full content"}],"deletedFiles":[]}',
-        "4. For a single-file edit: use ONE fenced code block with the correct language tag (e.g. ```tsx).",
-        "5. Paths must be absolute (start with /). Provide COMPLETE file contents, not snippets. Output must be preview-ready (always include an index.html entry file).",
+        "6. For a single-file edit: use ONE fenced code block with the correct language tag (e.g. ```tsx).",
+        "7. Paths must be absolute (start with /). Provide COMPLETE file contents, not snippets.",
+        "8. Keep building momentum across turns by default. Only stop or pause if user explicitly says stop/pause/cancel.",
       ].join("\n");
       const optimizedMessage = workspaceIntent
         ? `${input}\n\n${codeInstruction}\n\nReturn ONLY one JSON code block in the exact shape above. Start with a one-sentence description of what you are scaffolding, then the JSON block.`
@@ -455,9 +459,14 @@ export function AIChat({
       const firstCodeBlock = extractCodeBlock(response);
       const multiFileEdits = extractMultiFileEdits(response);
       const workspacePlan = extractWorkspacePlan(response);
+      const deleteTargetsFromInput = extractDeleteTargetsFromText(input);
+      const finalWorkspacePlan = {
+        ...workspacePlan,
+        deletedFiles: Array.from(new Set([...workspacePlan.deletedFiles, ...deleteTargetsFromInput])),
+      };
 
       const appliedWorkspace =
-        (workspacePlan.folders.length > 0 || workspacePlan.files.length > 0 || workspacePlan.deletedFiles.length > 0) &&
+        (finalWorkspacePlan.folders.length > 0 || finalWorkspacePlan.files.length > 0 || finalWorkspacePlan.deletedFiles.length > 0) &&
         Boolean(onApplyWorkspacePlan);
       const appliedMultiFile = !appliedWorkspace && multiFileEdits.length > 0 && Boolean(onApplyMultiFile);
       const appliedSingleFile = !appliedWorkspace && !appliedMultiFile && Boolean(firstCodeBlock && firstCodeBlock.code && onApplyCode);
@@ -469,36 +478,26 @@ export function AIChat({
       let appliedFiles: string[] = [];
 
       if (appliedWorkspace) {
-        const appliedResult = await onApplyWorkspacePlan?.(workspacePlan);
+        const appliedResult = await onApplyWorkspacePlan?.(finalWorkspacePlan);
         appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0 ? appliedResult : [
-          ...workspacePlan.folders.map((f) => `📁 ${f}`),
-          ...workspacePlan.files.map((f) => f.filePath),
-          ...workspacePlan.deletedFiles.map((f) => `🗑️ ${f}`),
+          ...finalWorkspacePlan.folders.map((f) => `📁 ${f}`),
+          ...finalWorkspacePlan.files.map((f) => f.filePath),
+          ...finalWorkspacePlan.deletedFiles.map((f) => `🗑️ ${f}`),
         ]).filter(Boolean));
-        if (!assistantContent) {
-          assistantContent = `Updated workspace: ${workspacePlan.folders.length} folder(s), ${workspacePlan.files.length} file(s), ${workspacePlan.deletedFiles.length} deletion(s).`;
-        }
       } else if (appliedMultiFile) {
         const appliedResult = await onApplyMultiFile?.(multiFileEdits);
         appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0
           ? appliedResult
           : multiFileEdits.map((e) => e.filePath)).filter(Boolean));
-        if (!assistantContent) {
-          assistantContent = `Edited ${multiFileEdits.length} file(s).`;
-        }
       } else if (appliedSingleFile) {
         const appliedResult = await onApplyCode?.(firstCodeBlock!.code, firstCodeBlock?.language);
         appliedFiles = sanitizeAppliedFiles((appliedResult && appliedResult.length > 0 ? appliedResult : []).filter(Boolean));
-        const lang = firstCodeBlock?.language || "";
-        if (!assistantContent) {
-          assistantContent = `Updated ${appliedFiles[0] || (lang ? `${lang} file` : "the current file")} in the editor.`;
-        }
       }
 
-      // Final guard — should never be empty after above
+      // Final guard with non-canned, file-specific summary
       if (!assistantContent) {
         assistantContent = appliedFiles.length > 0
-          ? `Applied ${appliedFiles.length} file(s) to the editor.`
+          ? `Updated: ${appliedFiles.join(", ")}`
           : descriptionText || "Done.";
       }
 
@@ -727,6 +726,32 @@ export function AIChat({
       files,
       deletedFiles: Array.from(deletedFromJson),
     };
+  };
+
+  const extractDeleteTargetsFromText = (text: string) => {
+    const hasDeleteIntent = /\b(delete|remove|rm)\b/i.test(text);
+    if (!hasDeleteIntent) return [] as string[];
+
+    const targets = new Set<string>();
+
+    const commandPattern = /(?:delete|remove|rm)\s+(?:the\s+)?(?:file|folder|directory)?\s*[:\-]?\s*["'`]?([^\s"'`,;]+)["'`]?/gi;
+    let match: RegExpExecArray | null;
+    while ((match = commandPattern.exec(text)) !== null) {
+      const normalized = normalizeAssistantPath(match[1] || "");
+      if (normalized && !normalized.startsWith("📁")) {
+        targets.add(normalized);
+      }
+    }
+
+    const explicitPathPattern = /["'`]?([./]?[a-zA-Z0-9_\-]+(?:\/[a-zA-Z0-9_\-.]+)+)["'`]?/g;
+    while ((match = explicitPathPattern.exec(text)) !== null) {
+      const normalized = normalizeAssistantPath(match[1] || "");
+      if (normalized && !normalized.startsWith("📁")) {
+        targets.add(normalized);
+      }
+    }
+
+    return Array.from(targets);
   };
 
   const renderMessageContent = (content: string) => {
