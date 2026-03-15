@@ -15,6 +15,22 @@
 
 ---
 
+## 🌐 Mapping Cross-Language Dependencies in Polyglot Codebases
+
+Modern software is rarely written in a single language. A typical full-stack project might span TypeScript on the frontend, Python microservices, Go APIs, Rust WASM modules, and SQL schemas — each with its own package ecosystem and import conventions. Understanding how these pieces connect is one of the hardest problems in large-scale software engineering.
+
+**NeoForge** addresses this with AI-assisted cross-language dependency mapping:
+
+- **Unified Dependency Graph** — Automatically parses `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, and more to build a single dependency graph across all languages in a repo.
+- **Cross-Boundary Call Tracing** — Identifies API contracts, shared data schemas, and inter-service calls that span language boundaries (e.g., a TypeScript frontend calling a Python REST endpoint or a Rust WASM function).
+- **Impact Analysis** — When a shared interface or schema changes, NeoForge traces the blast radius across every language that depends on it, flagging potentially broken consumers before you ship.
+- **AI-Powered Polyglot Reviews** — Code review understands the full call chain, not just the file being changed. It can reason about whether a Python type change breaks a TypeScript consumer or whether a Go struct rename affects a downstream Rust client.
+- **Visual Dependency Map** — Interactive graph view of all cross-language edges, filterable by language, service, or module — giving teams a live architecture map without maintaining it manually.
+
+This makes NeoForge especially powerful for microservice architectures, monorepos, and teams that mix languages across tiers of their stack.
+
+---
+
 ## ✨ Features
 
 ### 🤖 AI-Powered Development
