@@ -197,6 +197,95 @@ const relationColors: Record<string, string> = {
   'cross-boundary': '#ef4444',
 };
 
+const MOCK_PDG: GraphData = {
+  nodes: [
+    {
+      id: 'ts:app/(ide)/[projectId]/page.tsx',
+      label: 'IDE Page',
+      kind: 'typescript',
+      language: 'typescript',
+      filePath: 'app/(ide)/[projectId]/page.tsx',
+      line: 1,
+    },
+    {
+      id: 'ts:components/dependency-graph/d3-dependency-graph.tsx',
+      label: 'D3 Graph',
+      kind: 'typescript',
+      language: 'typescript',
+      filePath: 'components/dependency-graph/d3-dependency-graph.tsx',
+      line: 1,
+    },
+    {
+      id: 'api:/api/dependencies/graph',
+      label: '/api/dependencies/graph',
+      kind: 'api_route',
+      language: 'typescript',
+      filePath: 'app/api/dependencies/graph/route.ts',
+      line: 1,
+    },
+    {
+      id: 'ts:lib/dependency-engine/scanner.ts',
+      label: 'Scanner',
+      kind: 'typescript',
+      language: 'typescript',
+      filePath: 'lib/dependency-engine/scanner.ts',
+      line: 1,
+    },
+    {
+      id: 'ts:lib/dependency-engine/dag.ts',
+      label: 'DAG Core',
+      kind: 'typescript',
+      language: 'typescript',
+      filePath: 'lib/dependency-engine/dag.ts',
+      line: 1,
+    },
+    {
+      id: 'go:handlers/users.go',
+      label: 'Users Handler',
+      kind: 'go_handler',
+      language: 'go',
+      filePath: 'services/user-api/handlers/users.go',
+      line: 12,
+    },
+    {
+      id: 'py:api/users.py',
+      label: 'Users Service',
+      kind: 'python',
+      language: 'python',
+      filePath: 'services/ml-api/api/users.py',
+      line: 8,
+    },
+    {
+      id: 'prisma:model:User',
+      label: 'User Model',
+      kind: 'prisma_model',
+      language: 'prisma',
+      filePath: 'prisma/schema.prisma',
+      line: 22,
+    },
+    {
+      id: 'sql:users',
+      label: 'users table',
+      kind: 'sql_table',
+      language: 'sql',
+      filePath: 'db/schema.sql',
+      line: 45,
+    },
+  ],
+  links: [
+    { source: 'ts:app/(ide)/[projectId]/page.tsx', target: 'ts:components/dependency-graph/d3-dependency-graph.tsx', relation: 'import' },
+    { source: 'ts:components/dependency-graph/d3-dependency-graph.tsx', target: 'api:/api/dependencies/graph', relation: 'calls' },
+    { source: 'api:/api/dependencies/graph', target: 'ts:lib/dependency-engine/scanner.ts', relation: 'dependency' },
+    { source: 'ts:lib/dependency-engine/scanner.ts', target: 'ts:lib/dependency-engine/dag.ts', relation: 'dependency' },
+    { source: 'ts:lib/dependency-engine/dag.ts', target: 'go:handlers/users.go', relation: 'cross-boundary' },
+    { source: 'ts:lib/dependency-engine/dag.ts', target: 'py:api/users.py', relation: 'cross-boundary' },
+    { source: 'go:handlers/users.go', target: 'prisma:model:User', relation: 'implements' },
+    { source: 'py:api/users.py', target: 'prisma:model:User', relation: 'implements' },
+    { source: 'prisma:model:User', target: 'sql:users', relation: 'defines' },
+    { source: 'ts:lib/dependency-engine/dag.ts', target: 'ts:lib/dependency-engine/scanner.ts', relation: 'import' },
+  ],
+};
+
 export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 500 }: D3DependencyGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -215,6 +304,14 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     if (!graphData) return null;
     return graphMode === 'dag' ? buildDAGGraph(graphData) : graphData;
   }, [graphData, graphMode]);
+
+  const loadMockGraph = useCallback(() => {
+    setGraphData(MOCK_PDG);
+    setError(null);
+    setLoading(false);
+    setSelectedNode(null);
+    setHoveredNode(null);
+  }, []);
 
   const fetchGraph = useCallback(async () => {
     setLoading(true);
@@ -508,9 +605,14 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
           <div className="flex flex-col items-center gap-2 text-red-500">
             <Network className="h-8 w-8" />
             <p>{error}</p>
-            <Button onClick={fetchGraph} variant="outline" size="sm">
-              Retry
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={fetchGraph} variant="outline" size="sm">
+                Retry
+              </Button>
+              <Button onClick={loadMockGraph} variant="outline" size="sm">
+                Mock PDG
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -550,6 +652,9 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
             </Button>
             <Button variant="outline" size="sm" onClick={fetchGraph}>
               <RefreshCw className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadMockGraph}>
+              Mock PDG
             </Button>
           </div>
         </div>
