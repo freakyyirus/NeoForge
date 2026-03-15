@@ -25,15 +25,42 @@ Built for developers who want a faster inner loop: idea → code → running app
 
 Most real projects aren't written in one language. You might have a TypeScript frontend, a Python API, a Go service, and a Rust WASM module — all talking to each other through REST, gRPC, or shared schemas. The problem is that no single tool understands the full picture.
 
-NeoForge tackles this by building a dependency graph that spans all languages in the repo:
+NeoForge ships a **Polyglot Dependency Intelligence Engine** — a deterministic, AST-driven system that maps cross-language dependencies without relying on an LLM to guess at them.
 
-- Parses `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, etc. and merges them into one unified graph
-- Traces calls across language boundaries — e.g. if your TypeScript client calls a Python endpoint, that edge shows up
-- When you change a shared interface or schema, it flags every downstream consumer across every language, not just the ones in the same file
-- Code review context includes the full call chain, so if a Python type changes, the reviewer knows whether it breaks the TypeScript side too
-- Visual graph view of all cross-language connections, filterable by language, service, or module
+**How it works:**
 
-This is especially useful in monorepos and microservice setups where keeping track of "what calls what" across stacks is a constant headache.
+It uses [tree-sitter](https://tree-sitter.github.io) to parse TypeScript, Go, and Python source files into concrete syntax trees, then extracts specific nodes — `fetch`/axios calls, Express and Gin route definitions, exported types and structs, Prisma models, and SQL `CREATE TABLE` statements. From those nodes it builds a Directed Acyclic Graph (DAG) in memory, inferring edges by matching URL patterns across languages (so a `fetch("/api/users")` in TypeScript gets linked to `router.GET("/api/users", ...)` in Go), linking route handlers to the types they use, and wiring Prisma models to their SQL table counterparts.
+
+**What you can do with it:**
+
+- `POST /api/dependencies/graph` — returns the full DAG in a format ready for D3.js force-directed rendering, so you can visualise your entire cross-language call graph
+- `POST /api/dependencies/impact` — give it any node ID (a file path, a route, a type) and it runs a BFS traversal to return every upstream and downstream component that would break if that node changes — the "blast radius"
+
+This is all static analysis. No AI involved in the graph construction — the edges are structural, not guessed.
+
+**Implementation:**
+
+```
+lib/dependency-engine/
+  types.ts        — DependencyNode, DependencyEdge, DependencyGraph, ImpactResult
+  ast-parser.ts   — tree-sitter setup + per-language extractors
+  dag.ts          — DAG class, edge inference, BFS impact traversal, D3 output
+  scanner.ts      — walks a project directory, builds and caches the DAG
+
+app/api/dependencies/
+  graph/route.ts  — POST /api/dependencies/graph
+  impact/route.ts — POST /api/dependencies/impact
+```
+
+**Example — blast radius check:**
+
+```bash
+curl -X POST http://localhost:3000/api/dependencies/impact \
+  -H "Content-Type: application/json" \
+  -d '{ "projectRoot": "/path/to/project", "nodeId": "go:/src/handlers/users.go:struct:User" }'
+```
+
+Returns every TypeScript type, fetch call, and API route that transitively depends on that Go struct.
 
 ---
 
