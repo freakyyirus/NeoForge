@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,7 @@ interface GraphNode {
   language: string;
   filePath: string;
   line: number;
+  members?: string[];
   x?: number;
   y?: number;
   fx?: number | null;
@@ -51,6 +52,122 @@ interface D3DependencyGraphProps {
   files?: Record<string, string>;
   onNodeClick?: (node: GraphNode) => void;
   height?: number;
+}
+
+function buildDAGGraph(graph: GraphData): GraphData {
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+  const adjacency = new Map<string, string[]>();
+
+  for (const node of graph.nodes) {
+    adjacency.set(node.id, []);
+  }
+
+  for (const link of graph.links) {
+    const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+    const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+    if (!nodeById.has(sourceId) || !nodeById.has(targetId)) continue;
+    adjacency.get(sourceId)?.push(targetId);
+  }
+
+  let index = 0;
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  const indices = new Map<string, number>();
+  const lowlinks = new Map<string, number>();
+  const components: string[][] = [];
+
+  const strongConnect = (id: string) => {
+    indices.set(id, index);
+    lowlinks.set(id, index);
+    index += 1;
+    stack.push(id);
+    onStack.add(id);
+
+    const neighbors = adjacency.get(id) || [];
+    for (const neighbor of neighbors) {
+      if (!indices.has(neighbor)) {
+        strongConnect(neighbor);
+        lowlinks.set(id, Math.min(lowlinks.get(id)!, lowlinks.get(neighbor)!));
+      } else if (onStack.has(neighbor)) {
+        lowlinks.set(id, Math.min(lowlinks.get(id)!, indices.get(neighbor)!));
+      }
+    }
+
+    if (lowlinks.get(id) === indices.get(id)) {
+      const component: string[] = [];
+      while (stack.length > 0) {
+        const member = stack.pop()!;
+        onStack.delete(member);
+        component.push(member);
+        if (member === id) break;
+      }
+      components.push(component);
+    }
+  };
+
+  for (const node of graph.nodes) {
+    if (!indices.has(node.id)) {
+      strongConnect(node.id);
+    }
+  }
+
+  const componentByNode = new Map<string, number>();
+  components.forEach((component, componentIndex) => {
+    for (const member of component) {
+      componentByNode.set(member, componentIndex);
+    }
+  });
+
+  const dagNodes: GraphNode[] = components.map((component, componentIndex) => {
+    const members = component.map((id) => nodeById.get(id)).filter(Boolean) as GraphNode[];
+    const first = members[0];
+    const isCycle = members.length > 1;
+
+    const uniqueKinds = new Set(members.map((m) => m.kind));
+    const uniqueLanguages = new Set(members.map((m) => m.language));
+
+    return {
+      id: `scc-${componentIndex}`,
+      label: isCycle ? `Cycle (${members.length})` : first?.label || `Node ${componentIndex + 1}`,
+      kind: uniqueKinds.size === 1 ? members[0].kind : 'mixed',
+      language: uniqueLanguages.size === 1 ? members[0].language : 'mixed',
+      filePath: isCycle
+        ? `${members.length} files collapsed`
+        : first?.filePath || `component-${componentIndex}`,
+      line: first?.line || 1,
+      members: members.map((m) => m.filePath),
+    };
+  });
+
+  const edgeKeyToRelation = new Map<string, string>();
+  for (const link of graph.links) {
+    const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+    const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+    const sourceComponent = componentByNode.get(sourceId);
+    const targetComponent = componentByNode.get(targetId);
+
+    if (sourceComponent === undefined || targetComponent === undefined) continue;
+    if (sourceComponent === targetComponent) continue;
+
+    const key = `${sourceComponent}->${targetComponent}`;
+    if (!edgeKeyToRelation.has(key)) {
+      edgeKeyToRelation.set(key, link.relation || 'dependency');
+    }
+  }
+
+  const dagLinks: GraphLink[] = Array.from(edgeKeyToRelation.entries()).map(([key, relation]) => {
+    const [sourceComponent, targetComponent] = key.split('->');
+    return {
+      source: `scc-${sourceComponent}`,
+      target: `scc-${targetComponent}`,
+      relation,
+    };
+  });
+
+  return {
+    nodes: dagNodes,
+    links: dagLinks,
+  };
 }
 
 const kindConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
@@ -90,7 +207,14 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [filterKind, setFilterKind] = useState<Set<string>>(new Set());
   const [showLegend, setShowLegend] = useState(true);
+  const [graphMode, setGraphMode] = useState<'full' | 'dag'>('full');
   const simulationRef = useRef<any>(null);
+  const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+
+  const renderedGraphData = useMemo(() => {
+    if (!graphData) return null;
+    return graphMode === 'dag' ? buildDAGGraph(graphData) : graphData;
+  }, [graphData, graphMode]);
 
   const fetchGraph = useCallback(async () => {
     setLoading(true);
@@ -145,7 +269,7 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
   }, [fetchGraph]);
 
   useEffect(() => {
-    if (!graphData || !svgRef.current || !containerRef.current) return;
+    if (!renderedGraphData || !svgRef.current || !containerRef.current) return;
 
     const svg = d3.select(svgRef.current);
     const container = containerRef.current;
@@ -158,10 +282,12 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
+      .wheelDelta((event) => -event.deltaY * 0.0012)
       .on('zoom', (event) => {
         g.attr('transform', event.transform);
       });
 
+    zoomBehaviorRef.current = zoom;
     svg.call(zoom);
 
     // Arrow markers for links
@@ -170,7 +296,7 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       .join('marker')
       .attr('id', 'arrow')
       .attr('viewBox', '0 -5 10 10')
-      .attr('refX', 20)
+      .attr('refX', 30)
       .attr('refY', 0)
       .attr('markerWidth', 6)
       .attr('markerHeight', 6)
@@ -179,13 +305,13 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       .attr('fill', '#6b7280')
       .attr('d', 'M0,-5L10,0L0,5');
 
-    let filteredNodes = graphData.nodes;
-    let filteredLinks = graphData.links;
+    let filteredNodes = renderedGraphData.nodes;
+    let filteredLinks = renderedGraphData.links;
 
     if (filterKind.size > 0) {
-      filteredNodes = graphData.nodes.filter(n => filterKind.has(n.kind));
+      filteredNodes = renderedGraphData.nodes.filter(n => filterKind.has(n.kind));
       const nodeIds = new Set(filteredNodes.map(n => n.id));
-      filteredLinks = graphData.links.filter(l => {
+      filteredLinks = renderedGraphData.links.filter(l => {
         const sourceId = typeof l.source === 'string' ? l.source : l.source.id;
         const targetId = typeof l.target === 'string' ? l.target : l.target.id;
         return nodeIds.has(sourceId) && nodeIds.has(targetId);
@@ -214,9 +340,10 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
 
     const link = g.append('g')
       .attr('class', 'links')
-      .selectAll('line')
+      .selectAll('path')
       .data(links)
-      .join('line')
+      .join('path')
+      .attr('fill', 'none')
       .attr('stroke', d => relationColors[d.relation] || '#6b7280')
       .attr('stroke-opacity', 0.85)
       .attr('stroke-width', d => (d.relation === 'cross-boundary' ? 2.8 : 2.2))
@@ -278,15 +405,30 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       setHoveredNode(null);
       d3.select(event.currentTarget).select('circle')
         .attr('stroke', '#fff')
-        .attr('stroke-width', 2);
+        .attr('stroke-width', 2.5);
     });
 
     simulation.on('tick', () => {
       link
-        .attr('x1', d => (d.source as GraphNode).x!)
-        .attr('y1', d => (d.source as GraphNode).y!)
-        .attr('x2', d => (d.target as GraphNode).x!)
-        .attr('y2', d => (d.target as GraphNode).y!);
+        .attr('d', d => {
+          const source = d.source as GraphNode;
+          const target = d.target as GraphNode;
+          const x1 = source.x ?? 0;
+          const y1 = source.y ?? 0;
+          const x2 = target.x ?? 0;
+          const y2 = target.y ?? 0;
+
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const distance = Math.hypot(dx, dy) || 1;
+          const nx = -dy / distance;
+          const ny = dx / distance;
+          const curve = Math.min(22, distance * 0.18);
+          const cx = (x1 + x2) / 2 + nx * curve;
+          const cy = (y1 + y2) / 2 + ny * curve;
+
+          return `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`;
+        });
 
       node.attr('transform', d => `translate(${d.x},${d.y})`);
     });
@@ -299,9 +441,9 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     return () => {
       simulation.stop();
     };
-  }, [graphData, filterKind, height, onNodeClick]);
+  }, [renderedGraphData, filterKind, height, onNodeClick]);
 
-  const allKinds = graphData ? [...new Set(graphData.nodes.map(n => n.kind))] : [];
+  const allKinds = renderedGraphData ? [...new Set(renderedGraphData.nodes.map(n => n.kind))] : [];
 
   const toggleFilter = (kind: string) => {
     const newFilter = new Set(filterKind);
@@ -314,30 +456,33 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
   };
 
   const zoomIn = () => {
-    if (svgRef.current) {
+    if (svgRef.current && zoomBehaviorRef.current) {
       const svg = d3.select(svgRef.current);
-      svg.transition().call(
-        d3.zoom<SVGSVGElement, unknown>().scaleBy as any,
+      const zoomBehavior = zoomBehaviorRef.current;
+      svg.transition().duration(320).ease(d3.easeCubicOut).call(
+        (zoomBehavior.scaleBy as any),
         1.3
       );
     }
   };
 
   const zoomOut = () => {
-    if (svgRef.current) {
+    if (svgRef.current && zoomBehaviorRef.current) {
       const svg = d3.select(svgRef.current);
-      svg.transition().call(
-        d3.zoom<SVGSVGElement, unknown>().scaleBy as any,
+      const zoomBehavior = zoomBehaviorRef.current;
+      svg.transition().duration(320).ease(d3.easeCubicOut).call(
+        (zoomBehavior.scaleBy as any),
         0.7
       );
     }
   };
 
   const resetZoom = () => {
-    if (svgRef.current) {
+    if (svgRef.current && zoomBehaviorRef.current) {
       const svg = d3.select(svgRef.current);
-      svg.transition().call(
-        d3.zoom<SVGSVGElement, unknown>().transform as any,
+      const zoomBehavior = zoomBehaviorRef.current;
+      svg.transition().duration(420).ease(d3.easeCubicOut).call(
+        (zoomBehavior.transform as any),
         d3.zoomIdentity
       );
     }
@@ -379,9 +524,18 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
           <CardTitle className="flex items-center gap-2">
             <Network className="h-5 w-5" />
             Polyglot Dependency Graph
-            <Badge variant="secondary">{graphData?.nodes.length || 0} nodes</Badge>
+            <Badge variant="secondary">{renderedGraphData?.nodes.length || 0} nodes</Badge>
+            <Badge variant="outline">{graphMode === 'dag' ? 'DAG' : 'FULL'}</Badge>
           </CardTitle>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setGraphMode((mode) => (mode === 'full' ? 'dag' : 'full'))}
+              className="min-w-[68px]"
+            >
+              {graphMode === 'full' ? 'DAG' : 'FULL'}
+            </Button>
             <Button variant="outline" size="sm" onClick={zoomOut}>
               <ZoomOut className="h-4 w-4" />
             </Button>
@@ -440,6 +594,15 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
             <div className="absolute top-2 left-2 bg-white border-2 border-black p-2 rounded shadow-lg text-xs z-10">
               <div className="font-bold">{hoveredNode.label}</div>
               <div className="text-muted-foreground">{hoveredNode.filePath}:{hoveredNode.line}</div>
+              {graphMode === 'dag' && hoveredNode.members && hoveredNode.members.length > 1 && (
+                <div className="mt-1 max-w-[280px]">
+                  <div className="font-medium">Collapsed files:</div>
+                  <div className="text-muted-foreground break-all">{hoveredNode.members.slice(0, 4).join(', ')}</div>
+                  {hoveredNode.members.length > 4 && (
+                    <div className="text-muted-foreground">+{hoveredNode.members.length - 4} more</div>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-1 mt-1">
                 <div 
                   className="w-2 h-2 rounded-full" 
@@ -469,6 +632,14 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
                 <div><span className="font-medium">Line:</span> {selectedNode.line}</div>
                 <div><span className="font-medium">Language:</span> {selectedNode.language}</div>
                 <div><span className="font-medium">Type:</span> {kindConfig[selectedNode.kind]?.label || selectedNode.kind}</div>
+                {graphMode === 'dag' && selectedNode.members && selectedNode.members.length > 1 && (
+                  <div>
+                    <span className="font-medium">Collapsed:</span>
+                    <div className="mt-1 max-h-24 overflow-auto text-muted-foreground break-all">
+                      {selectedNode.members.join(', ')}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
