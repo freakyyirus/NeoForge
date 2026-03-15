@@ -15,9 +15,19 @@ type GitHubEvent = {
     pull_request?: {
       number?: number;
       title?: string;
+      state?: "open" | "closed";
+      draft?: boolean;
+      merged_at?: string | null;
     };
     action?: string;
   };
+};
+
+type ReviewStatusCounts = {
+  pending: number;
+  inProgress: number;
+  completed: number;
+  failed: number;
 };
 
 function getPushCommitCount(event: GitHubEvent): number {
@@ -142,6 +152,66 @@ async function getRealCommitMetrics(octokit: Awaited<ReturnType<typeof getUserOc
   };
 }
 
+async function getRealReviewMetrics(
+  octokit: Awaited<ReturnType<typeof getUserOctokit>>,
+  sinceIso: string
+): Promise<ReviewStatusCounts> {
+  const counts: ReviewStatusCounts = {
+    pending: 0,
+    inProgress: 0,
+    completed: 0,
+    failed: 0,
+  };
+
+  const { data: repos } = await octokit.repos.listForAuthenticatedUser({
+    sort: "updated",
+    per_page: 10,
+  });
+
+  await Promise.all(
+    repos.map(async (repo) => {
+      try {
+        const { data: pulls } = await octokit.pulls.list({
+          owner: repo.owner.login,
+          repo: repo.name,
+          state: "all",
+          sort: "updated",
+          direction: "desc",
+          per_page: 50,
+        });
+
+        for (const pr of pulls) {
+          const updatedAt = pr.updated_at || pr.created_at;
+          if (!updatedAt) continue;
+          if (new Date(updatedAt).getTime() < new Date(sinceIso).getTime()) continue;
+
+          if (pr.state === "open") {
+            if (pr.draft) {
+              counts.inProgress += 1;
+            } else {
+              counts.pending += 1;
+            }
+            continue;
+          }
+
+          if (pr.merged_at) {
+            counts.completed += 1;
+          } else {
+            counts.failed += 1;
+          }
+        }
+      } catch (error: any) {
+        if (error?.status === 409 || error?.status === 404) {
+          return;
+        }
+        throw error;
+      }
+    })
+  );
+
+  return counts;
+}
+
 export async function GET() {
   try {
     const user = await getCurrentUser();
@@ -162,6 +232,12 @@ export async function GET() {
 
     let commitsThisWeek = 0;
     let commitSeries: Array<{ name: string; commits: number }> = [];
+    let reviewStatus: ReviewStatusCounts = {
+      pending: 0,
+      inProgress: 0,
+      completed: 0,
+      failed: 0,
+    };
 
     try {
       const metrics = await getRealCommitMetrics(octokit, sinceIso);
@@ -196,6 +272,32 @@ export async function GET() {
       }));
     }
 
+    try {
+      reviewStatus = await getRealReviewMetrics(octokit, sinceIso);
+    } catch {
+      // Fallback from PR activity events when PR listing fails.
+      for (const event of events) {
+        if (event.type !== "PullRequestEvent") continue;
+        const action = String(event.payload?.action || "").toLowerCase();
+        if (["opened", "reopened", "review_requested", "ready_for_review"].includes(action)) {
+          reviewStatus.pending += 1;
+          continue;
+        }
+        if (["synchronize", "edited", "converted_to_draft"].includes(action)) {
+          reviewStatus.inProgress += 1;
+          continue;
+        }
+        if (["closed", "merged"].includes(action)) {
+          const merged = Boolean(event.payload?.pull_request?.merged_at) || action === "merged";
+          if (merged) {
+            reviewStatus.completed += 1;
+          } else {
+            reviewStatus.failed += 1;
+          }
+        }
+      }
+    }
+
     const activities = events
       .map(mapActivity)
       .filter((activity) => activity.type !== "commit" || (activity.commitCount || 0) > 0)
@@ -204,6 +306,7 @@ export async function GET() {
     return NextResponse.json({
       commitsThisWeek,
       commitSeries,
+      reviewStatus,
       activities,
     }, {
       headers: {

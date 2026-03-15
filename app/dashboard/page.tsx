@@ -124,10 +124,11 @@ export default function DashboardPage() {
       const githubRepos = Array.isArray(reposData?.repos) ? reposData.repos : [];
       const reviews = reviewsData.reviews || [];
       const statusCounts = reviewsData?.statusCounts || {};
-      let pendingReviews = Number(statusCounts.PENDING || 0);
-      let inProgressReviews = Number(statusCounts.IN_PROGRESS || 0);
-      let completedReviews = Number(statusCounts.COMPLETED || 0);
-      let failedReviews = Number(statusCounts.FAILED || 0);
+      const apiReviewStatus = activityData?.reviewStatus || {};
+      let pendingReviews = Number(apiReviewStatus.pending || statusCounts.PENDING || 0);
+      let inProgressReviews = Number(apiReviewStatus.inProgress || statusCounts.IN_PROGRESS || 0);
+      let completedReviews = Number(apiReviewStatus.completed || statusCounts.COMPLETED || 0);
+      let failedReviews = Number(apiReviewStatus.failed || statusCounts.FAILED || 0);
 
       // Fallback: when DB-backed review counts are empty, derive from real GitHub PR activity.
       if (pendingReviews + inProgressReviews + completedReviews + failedReviews === 0) {
