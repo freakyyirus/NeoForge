@@ -102,6 +102,7 @@ export default function IDEPage() {
   const [leftPanelWidth, setLeftPanelWidth] = useState(256);
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
   const [activeTab, setActiveTab] = useState("terminal");
+  const [rightPanelTab, setRightPanelTab] = useState<"chat" | "preview">("chat");
   const [files, setFiles] = useState<FileItem[]>(initialFiles);
   const [previewUrl, setPreviewUrl] = useState("http://localhost:3000");
   const [previewMode, setPreviewMode] = useState<"app" | "editor">("app");
@@ -2493,22 +2494,174 @@ ${fileContent}
               className="shrink-0 border-l-4 border-black bg-white"
               style={{ width: rightPanelWidth }}
             >
-              <div className="h-full p-2">
-                <AIChat
-                  onSendMessage={handleAIChat}
-                  onApplyCode={handleAIApplyCode}
-                  onApplyMultiFile={handleAIAutoApplyMultiFile}
-                  onApplyWorkspacePlan={handleAIAutoApplyWorkspacePlan}
-                  onPushAndDeploy={handlePushWorkspaceToGitHub}
-                  onGetEditorErrors={getEditorErrors}
-                  onRevertLastApply={handleRevertLastAIApply}
-                  canRevertLastApply={canRevertLastApply}
-                  onPreviewDiff={openDiffPreview}
-                  onPreviewMultiFile={openMultiFilePreview}
-                  compact
-                  initialContext={selectedFile ? [{ type: "file", data: { filePath: selectedFile, content: fileContent } }] : []}
-                  className="h-full rounded-md border-2 border-black"
-                />
+              <div className="flex h-full flex-col">
+                <div className="flex items-center border-b-4 border-black px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => setRightPanelTab("chat")}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-bold transition-all ${
+                      rightPanelTab === "chat" 
+                        ? "bg-black text-white" 
+                        : "bg-transparent text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Bot className="h-4 w-4" />
+                    Chat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRightPanelTab("preview")}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-bold transition-all ${
+                      rightPanelTab === "preview" 
+                        ? "bg-black text-white" 
+                        : "bg-transparent text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Play className="h-4 w-4" />
+                    Preview
+                  </button>
+                </div>
+                
+                <div className="flex-1 overflow-hidden">
+                  {rightPanelTab === "chat" ? (
+                    <div className="h-full p-2">
+                      <AIChat
+                        onSendMessage={handleAIChat}
+                        onApplyCode={handleAIApplyCode}
+                        onApplyMultiFile={handleAIAutoApplyMultiFile}
+                        onApplyWorkspacePlan={handleAIAutoApplyWorkspacePlan}
+                        onPushAndDeploy={handlePushWorkspaceToGitHub}
+                        onGetEditorErrors={getEditorErrors}
+                        onRevertLastApply={handleRevertLastAIApply}
+                        canRevertLastApply={canRevertLastApply}
+                        onPreviewDiff={openDiffPreview}
+                        onPreviewMultiFile={openMultiFilePreview}
+                        compact
+                        initialContext={selectedFile ? [{ type: "file", data: { filePath: selectedFile, content: fileContent } }] : []}
+                        className="h-full rounded-md border-2 border-black"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-full p-2">
+                      {(() => {
+                        const ws = previewMode === "app" ? buildWorkspacePreviewDoc() : null;
+                        return (
+                          <div className="flex h-full flex-col gap-2 rounded-lg border-4 border-black bg-white p-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button type="button" size="sm" variant={previewMode === "app" ? "primary" : "outline"} onClick={() => setPreviewMode("app")}>
+                                Live Workspace
+                              </Button>
+                              <Button type="button" size="sm" variant={previewMode === "editor" ? "primary" : "outline"} onClick={() => setPreviewMode("editor")}>
+                                Dev Server
+                              </Button>
+                              <button
+                                type="button"
+                                className="ml-auto flex h-7 w-7 items-center justify-center rounded border border-black/20 hover:bg-muted"
+                                title="Refresh preview"
+                                onClick={() => setPreviewRefreshSignal((n) => n + 1)}
+                              >
+                                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+                              </button>
+                            </div>
+
+                            {previewMode === "app" && (() => {
+                              if (!ws) return null;
+                              const { doc, entryFile, fileCount, isFramework, runtimeEntryFile } = ws;
+                              const fallbackDoc = buildLivePreviewDoc();
+
+                              if (isFramework && !doc) {
+                                return (
+                                  <>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-yellow-800">no runnable entry found</span>
+                                      <span>Showing file-level fallback preview.</span>
+                                    </div>
+                                    <iframe
+                                      key={previewRefreshSignal}
+                                      title="Live Workspace Preview"
+                                      srcDoc={fallbackDoc}
+                                      sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+                                      className="min-h-0 flex-1 w-full rounded-md border-2 border-black bg-white"
+                                    />
+                                  </>
+                                );
+                              }
+
+                              if (!entryFile) {
+                                return (
+                                  <>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      <span className="rounded bg-muted px-1.5 py-0.5">no html entry</span>
+                                      <span>Showing file-level preview fallback.</span>
+                                    </div>
+                                    <iframe
+                                      key={previewRefreshSignal}
+                                      title="Live Workspace Preview"
+                                      srcDoc={fallbackDoc}
+                                      sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+                                      className="min-h-0 flex-1 w-full rounded-md border-2 border-black bg-white"
+                                    />
+                                  </>
+                                );
+                              }
+
+                              return (
+                                <>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{entryFile}</span>
+                                    <span>{fileCount} file{fileCount !== 1 ? "s" : ""} in workspace</span>
+                                    {isFramework && runtimeEntryFile && (
+                                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-800">framework runtime preview</span>
+                                    )}
+                                  </div>
+                                  <iframe
+                                    key={previewRefreshSignal}
+                                    title="Live Workspace Preview"
+                                    srcDoc={doc}
+                                    sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+                                    className="min-h-0 flex-1 w-full rounded-md border-2 border-black bg-white"
+                                  />
+                                </>
+                              );
+                            })()}
+
+                            {previewMode === "editor" && (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    value={previewUrl}
+                                    onChange={(e) => setPreviewUrl(e.target.value)}
+                                    placeholder="http://localhost:3000"
+                                    className="flex-1 border-2 border-black"
+                                  />
+                                  <Button type="button" variant="outline" onClick={() => setPreviewUrl((prev) => prev.trim() || "http://localhost:3000")}>
+                                    Open
+                                  </Button>
+                                </div>
+                                {(() => {
+                                  const safePreviewUrl = previewUrl.trim();
+                                  return safePreviewUrl ? (
+                                    <iframe
+                                      key={safePreviewUrl}
+                                      title="Dev Server Preview"
+                                      src={safePreviewUrl}
+                                      className="min-h-0 flex-1 w-full rounded-md border-2 border-black bg-white"
+                                    />
+                                  ) : (
+                                    <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-md border-2 border-black bg-muted text-sm text-muted-foreground">
+                                      <p>Enter your dev server URL above and press Open.</p>
+                                      <p className="text-xs">Run <code className="rounded bg-black/10 px-1">npm run dev</code> in the Terminal first.</p>
+                                    </div>
+                                  );
+                                })()}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
               </div>
             </aside>
           </>

@@ -94,13 +94,31 @@ function sanitizeAssistantMessage(text: string): string {
   return cleaned.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function normalizeEscapedAIResponse(text: string): string {
+  if (!text) return "";
+  let normalized = text;
+
+  if (/\\"(?:path|files|content|folders|deletedFiles)\\"/i.test(normalized)) {
+    normalized = normalized.replace(/\\"/g, '"');
+  }
+
+  if (/\\n|\\r|\\t/.test(normalized)) {
+    normalized = normalized
+      .replace(/\\r/g, "\r")
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t");
+  }
+
+  return normalized;
+}
+
 function hasScaffoldArtifact(text: string): boolean {
   if (!text) return false;
   return (
-    /"files"\s*:\s*\[/i.test(text) ||
-    /"path"\s*:\s*"\//i.test(text) ||
-    /"content"\s*:\s*"/i.test(text) ||
-    /\},\s*\{"path"\s*:/i.test(text)
+    /(?:\\")?"?files(?:\\")?"?\s*:\s*\[/i.test(text) ||
+    /(?:\\")?"?path(?:\\")?"?\s*:\s*(?:\\")?"?\//i.test(text) ||
+    /(?:\\")?"?content(?:\\")?"?\s*:\s*(?:\\")?"/i.test(text) ||
+    /\},\s*\{(?:\\")?"?path(?:\\")?"?\s*:/i.test(text)
   );
 }
 
@@ -550,9 +568,10 @@ export function AIChat({
 
       const response = await onSendMessage(optimizedMessage, requestContext, apiKey || undefined, model, providerModel || undefined);
       if (isRequestCancelled()) return;
-      const firstCodeBlock = extractCodeBlock(response);
-      const multiFileEdits = extractMultiFileEdits(response);
-      const workspacePlan = extractWorkspacePlan(response);
+      const responseForParsing = normalizeEscapedAIResponse(response);
+      const firstCodeBlock = extractCodeBlock(responseForParsing);
+      const multiFileEdits = extractMultiFileEdits(responseForParsing);
+      const workspacePlan = extractWorkspacePlan(responseForParsing);
       const finalWorkspacePlan = {
         ...workspacePlan,
         deletedFiles: Array.from(new Set([...workspacePlan.deletedFiles, ...deleteTargetsFromInput])),
@@ -564,8 +583,11 @@ export function AIChat({
       const appliedMultiFile = !appliedWorkspace && multiFileEdits.length > 0 && Boolean(onApplyMultiFile);
       const appliedSingleFile = !appliedWorkspace && !appliedMultiFile && Boolean(firstCodeBlock && firstCodeBlock.code && onApplyCode);
 
-      const descriptionText = sanitizeAssistantMessage(response);
-      const responseHasScaffoldArtifact = hasScaffoldArtifact(response) || hasScaffoldArtifact(descriptionText);
+      const descriptionText = sanitizeAssistantMessage(responseForParsing);
+      const responseHasScaffoldArtifact =
+        hasScaffoldArtifact(response) ||
+        hasScaffoldArtifact(responseForParsing) ||
+        hasScaffoldArtifact(descriptionText);
 
       // Code NEVER appears in chat — always use stripped description only.
       let assistantContent = descriptionText;
@@ -694,41 +716,49 @@ export function AIChat({
     const edits: Array<{ filePath: string; content: string }> = [];
     const seen = new Set<string>();
 
-    const headingPattern = /(?:^|\n)\s*(?:#+\s*)?file\s*:\s*([^\n]+)\n```(?:[\w+-]+)?\n([\s\S]*?)```/gi;
-    let headingMatch: RegExpExecArray | null;
-    while ((headingMatch = headingPattern.exec(content)) !== null) {
-      const filePath = normalizeAssistantPath(headingMatch[1]);
-      const block = headingMatch[2].trim();
-      if (!filePath || !block) continue;
-      const key = `${filePath}:${block.length}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      edits.push({ filePath, content: block });
-    }
+    const collectFromSource = (source: string) => {
+      const headingPattern = /(?:^|\n)\s*(?:#+\s*)?file\s*:\s*([^\n]+)\n```(?:[\w+-]+)?\n([\s\S]*?)```/gi;
+      let headingMatch: RegExpExecArray | null;
+      while ((headingMatch = headingPattern.exec(source)) !== null) {
+        const filePath = normalizeAssistantPath(headingMatch[1]);
+        const block = headingMatch[2].trim();
+        if (!filePath || !block) continue;
+        const key = `${filePath}:${block.length}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edits.push({ filePath, content: block });
+      }
 
-    const fencePathPattern = /```(?:[\w+-]+)?\s*path=([^\n]+)\n([\s\S]*?)```/gi;
-    let fencePathMatch: RegExpExecArray | null;
-    while ((fencePathMatch = fencePathPattern.exec(content)) !== null) {
-      const filePath = normalizeAssistantPath(fencePathMatch[1]);
-      const block = fencePathMatch[2].trim();
-      if (!filePath || !block) continue;
-      const key = `${filePath}:${block.length}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      edits.push({ filePath, content: block });
-    }
+      const fencePathPattern = /```(?:[\w+-]+)?\s*path=([^\n]+)\n([\s\S]*?)```/gi;
+      let fencePathMatch: RegExpExecArray | null;
+      while ((fencePathMatch = fencePathPattern.exec(source)) !== null) {
+        const filePath = normalizeAssistantPath(fencePathMatch[1]);
+        const block = fencePathMatch[2].trim();
+        if (!filePath || !block) continue;
+        const key = `${filePath}:${block.length}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edits.push({ filePath, content: block });
+      }
 
-    // Recover from malformed scaffold blobs: {"path":"...","content":"..."}
-    const looseJsonFilePattern = /"path"\s*:\s*"([^"\n]+)"\s*,\s*"content"\s*:\s*"((?:\\.|[^"\\])*)"/gi;
-    let looseMatch: RegExpExecArray | null;
-    while ((looseMatch = looseJsonFilePattern.exec(content)) !== null) {
-      const filePath = normalizeAssistantPath(looseMatch[1]);
-      const decoded = decodeJsonStringLiteral(looseMatch[2] || "").trim();
-      if (!filePath || !decoded) continue;
-      const key = `${filePath}:${decoded.length}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      edits.push({ filePath, content: decoded });
+      // Recover from malformed scaffold blobs: {"path":"...","content":"..."}
+      const looseJsonFilePattern = /"path"\s*:\s*"([^"\n]+)"\s*,\s*"content"\s*:\s*"((?:\\.|[^"\\])*)"/gi;
+      let looseMatch: RegExpExecArray | null;
+      while ((looseMatch = looseJsonFilePattern.exec(source)) !== null) {
+        const filePath = normalizeAssistantPath(looseMatch[1]);
+        const decoded = decodeJsonStringLiteral(looseMatch[2] || "").trim();
+        if (!filePath || !decoded) continue;
+        const key = `${filePath}:${decoded.length}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edits.push({ filePath, content: decoded });
+      }
+    };
+
+    collectFromSource(content);
+    const normalized = normalizeEscapedAIResponse(content);
+    if (normalized !== content) {
+      collectFromSource(normalized);
     }
 
     return edits;
