@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { getUserOctokit } from "@/lib/github";
+import { inngest } from "@/lib/inngest/client";
 
 type FileChange = {
   path: string;
@@ -36,6 +37,40 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const projectId = String(body?.projectId || "").trim();
+    const repoUrl = String(body?.repoUrl || "").trim();
+
+    // New async parse flow: mark project as processing and fan out to Inngest.
+    // This branch is additive and keeps legacy repo sync behavior below unchanged.
+    if (projectId && repoUrl) {
+      try {
+        await (prisma as any).project.update({
+          where: { id: projectId },
+          data: {
+            status: "processing",
+            repoUrl,
+          },
+        });
+      } catch {
+        return NextResponse.json({ error: "Project not found" }, { status: 404 });
+      }
+
+      await inngest.send({
+        name: "project/parse.dependencies",
+        data: {
+          projectId,
+          repoUrl,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        queued: true,
+        projectId,
+        status: "processing",
+      });
+    }
+
     const repository = String(body?.repository || "");
     const message = String(body?.message || "chore: sync workspace from NeoForge IDE");
     const redeploy = Boolean(body?.redeploy);

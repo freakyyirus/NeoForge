@@ -146,6 +146,30 @@ model IndexedFile {
   @@unique([repositoryId, filePath])
 }
 
+  model Project {
+    id               String            @id @default(cuid())
+    name             String
+    repoUrl          String?
+    status           String            @default("ready")
+    createdAt        DateTime          @default(now())
+    updatedAt        DateTime          @updatedAt
+
+    dependencyGraphs DependencyGraph[]
+  }
+
+  model DependencyGraph {
+    id         String   @id @default(cuid())
+    projectId  String
+    project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    nodes      Json
+    edges      Json
+    meta       Json?
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+
+    @@index([projectId])
+  }
+
 enum ReviewType {
   AUTOMATIC
   MANUAL
