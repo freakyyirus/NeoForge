@@ -62,6 +62,12 @@ const kindConfig: Record<string, { color: string; icon: React.ReactNode; label: 
   go_struct: { color: '#14b8a6', icon: <Code className="w-3 h-3" />, label: 'Struct' },
   sql_table: { color: '#a855f7', icon: <Database className="w-3 h-3" />, label: 'SQL Table' },
   prisma_model: { color: '#ec4899', icon: <Database className="w-3 h-3" />, label: 'Prisma Model' },
+  typescript: { color: '#2563eb', icon: <Code className="w-3 h-3" />, label: 'TypeScript' },
+  javascript: { color: '#facc15', icon: <Code className="w-3 h-3" />, label: 'JavaScript' },
+  python: { color: '#0ea5e9', icon: <Code className="w-3 h-3" />, label: 'Python' },
+  go: { color: '#06b6d4', icon: <Code className="w-3 h-3" />, label: 'Go' },
+  sql: { color: '#a855f7', icon: <Database className="w-3 h-3" />, label: 'SQL' },
+  prisma: { color: '#ec4899', icon: <Database className="w-3 h-3" />, label: 'Prisma' },
 };
 
 const relationColors: Record<string, string> = {
@@ -69,6 +75,9 @@ const relationColors: Record<string, string> = {
   implements: '#3b82f6',
   queries: '#f59e0b',
   defines: '#a855f7',
+  dependency: '#64748b',
+  import: '#3b82f6',
+  'cross-boundary': '#ef4444',
 };
 
 export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 500 }: D3DependencyGraphProps) {
@@ -196,10 +205,10 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     const links = safeLinks.map(d => ({ ...d }));
 
     const simulation = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(links).id((d: any) => d.id).distance(100))
-      .force('charge', d3.forceManyBody().strength(-300))
+      .force('link', d3.forceLink(links).id((d: any) => d.id).distance(130))
+      .force('charge', d3.forceManyBody().strength(-340))
       .force('center', d3.forceCenter(width / 2, graphHeight / 2))
-      .force('collision', d3.forceCollide().radius(40));
+      .force('collision', d3.forceCollide().radius(56));
 
     simulationRef.current = simulation;
 
@@ -209,8 +218,8 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       .data(links)
       .join('line')
       .attr('stroke', d => relationColors[d.relation] || '#6b7280')
-      .attr('stroke-opacity', 0.6)
-      .attr('stroke-width', 2)
+      .attr('stroke-opacity', 0.85)
+      .attr('stroke-width', d => (d.relation === 'cross-boundary' ? 2.8 : 2.2))
       .attr('marker-end', 'url(#arrow)');
 
     const node = g.append('g')
@@ -237,19 +246,20 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
 
     // Node circles
     node.append('circle')
-      .attr('r', 16)
+      .attr('r', 24)
       .attr('fill', d => kindConfig[d.kind]?.color || '#6b7280')
       .attr('stroke', '#fff')
-      .attr('stroke-width', 2);
+      .attr('stroke-width', 2.5);
 
     // Node labels
     node.append('text')
-      .text(d => d.label.length > 15 ? d.label.substring(0, 12) + '...' : d.label)
-      .attr('x', 20)
-      .attr('y', 4)
-      .attr('font-size', '11px')
+      .text(d => d.label.length > 20 ? d.label.substring(0, 17) + '...' : d.label)
+      .attr('x', 0)
+      .attr('y', 40)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '12px')
       .attr('fill', '#374151')
-      .attr('font-weight', '500');
+      .attr('font-weight', '700');
 
     node.on('click', (event, d) => {
       event.stopPropagation();
