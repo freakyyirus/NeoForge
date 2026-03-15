@@ -1,0 +1,15 @@
+{
+  "name": "neoforge-dependency-engine",
+  "version": "0.0.1",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-typescript": "^0.23.2",
+    "tree-sitter-go": "^0.23.4",
+    "tree-sitter-python": "^0.23.6",
+    "tree-sitter-sql": "^0.1.0",
+    "graphlib": "^2.1.8",
+    "fast-glob": "^3.3.3"
+  }
+}
