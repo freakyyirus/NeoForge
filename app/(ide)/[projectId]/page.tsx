@@ -6,6 +6,7 @@ import { FileExplorer } from "@/components/file-explorer/file-explorer";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { TerminalComponent } from "@/components/terminal/terminal";
 import { AIChat } from "@/components/ai-chat/ai-chat";
+import { DependencyGraphViewer } from "@/components/dependency-graph/dependency-graph-viewer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ import {
   X,
   Bug,
   SquareTerminal,
+  Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -2176,6 +2178,10 @@ ${fileContent}
                     <Bot className="h-4 w-4" />
                     Review
                   </TabsTrigger>
+                  <TabsTrigger value="dependencies" className="flex items-center gap-2">
+                    <Network className="h-4 w-4" />
+                    Dependencies
+                  </TabsTrigger>
                   <button
                     type="button"
                     aria-label="Collapse bottom panel"
@@ -2473,6 +2479,18 @@ ${fileContent}
                     </div>
                   )}
                 </div>
+              </TabsContent>
+
+              <TabsContent value="dependencies" className="m-0 min-h-0 flex-1 p-2 overflow-auto">
+                <DependencyGraphViewer 
+                  files={fileContentsRef.current}
+                  onFileSelect={(filePath) => {
+                    setSelectedFile(filePath);
+                    if (fileContentsRef.current[filePath] !== undefined) {
+                      setFileContent(fileContentsRef.current[filePath]);
+                    }
+                  }}
+                />
               </TabsContent>
             </Tabs>
           </div>
