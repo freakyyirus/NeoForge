@@ -6,7 +6,7 @@ import { FileExplorer } from "@/components/file-explorer/file-explorer";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { TerminalComponent } from "@/components/terminal/terminal";
 import { AIChat } from "@/components/ai-chat/ai-chat";
-import { PolyglotDependencyViewer } from "@/components/dependency-graph/polyglot-dependency-viewer";
+import { D3DependencyGraph } from "@/components/dependency-graph/d3-dependency-graph";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -2481,13 +2481,14 @@ ${fileContent}
               </TabsContent>
 
               <TabsContent value="dependencies" className="m-0 min-h-0 flex-1 p-2 overflow-auto">
-                <PolyglotDependencyViewer 
-                  onFileSelect={(filePath: string, line?: number) => {
-                    setSelectedFile(filePath);
-                    if (fileContentsRef.current[filePath] !== undefined) {
-                      setFileContent(fileContentsRef.current[filePath]);
+                <D3DependencyGraph 
+                  onNodeClick={(node) => {
+                    setSelectedFile(node.filePath);
+                    if (fileContentsRef.current[node.filePath] !== undefined) {
+                      setFileContent(fileContentsRef.current[node.filePath]);
                     }
                   }}
+                  height={450}
                 />
               </TabsContent>
             </Tabs>
