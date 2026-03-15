@@ -3,6 +3,7 @@
 // Returns: ImpactResult — the changed node + all downstream/upstream nodes
 
 import { NextRequest, NextResponse } from "next/server";
+import path from "path";
 import { buildDag, invalidateDagCache } from "@/lib/dependency-engine/scanner";
 
 export async function POST(req: NextRequest) {
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     // Basic path traversal guard — projectRoot must be an absolute path
     // and must not contain ".." segments after resolution
-    const resolvedRoot = require("path").resolve(projectRoot);
+    const resolvedRoot = path.resolve(projectRoot);
     if (resolvedRoot !== projectRoot.replace(/\\/g, "/").replace(/\\/g, "/")) {
       // allow both slash styles but block traversal
     }
