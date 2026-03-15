@@ -1,4 +1,4 @@
-# NeoForge 🚀
+# NeoForge
 
 <div align="center">
 
@@ -7,364 +7,148 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql)
 
-**The AI-Powered Browser-Based IDE for Building Full-Stack Applications**
-
-[Features](#-features) • [Architecture](#-architecture) • [Tech Stack](#-tech-stack) • [Database Schema](#-database-schema) • [Getting Started](#-getting-started) • [API Routes](#-api-routes)
+A browser-based IDE with AI that actually writes code for you — not just suggests it.
 
 </div>
 
 ---
 
-## 🌐 Mapping Cross-Language Dependencies in Polyglot Codebases
+## What is this?
 
-Modern software is rarely written in a single language. A typical full-stack project might span TypeScript on the frontend, Python microservices, Go APIs, Rust WASM modules, and SQL schemas — each with its own package ecosystem and import conventions. Understanding how these pieces connect is one of the hardest problems in large-scale software engineering.
+NeoForge is a full-stack IDE that runs entirely in the browser. You describe what you want to build, and the AI writes the files directly into the editor. No copy-pasting. No "click Apply". It just works like Lovable or Replit — except you own the whole thing.
 
-**NeoForge** addresses this with AI-assisted cross-language dependency mapping:
-
-- **Unified Dependency Graph** — Automatically parses `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, and more to build a single dependency graph across all languages in a repo.
-- **Cross-Boundary Call Tracing** — Identifies API contracts, shared data schemas, and inter-service calls that span language boundaries (e.g., a TypeScript frontend calling a Python REST endpoint or a Rust WASM function).
-- **Impact Analysis** — When a shared interface or schema changes, NeoForge traces the blast radius across every language that depends on it, flagging potentially broken consumers before you ship.
-- **AI-Powered Polyglot Reviews** — Code review understands the full call chain, not just the file being changed. It can reason about whether a Python type change breaks a TypeScript consumer or whether a Go struct rename affects a downstream Rust client.
-- **Visual Dependency Map** — Interactive graph view of all cross-language edges, filterable by language, service, or module — giving teams a live architecture map without maintaining it manually.
-
-This makes NeoForge especially powerful for microservice architectures, monorepos, and teams that mix languages across tiers of their stack.
+Built for developers who want a faster inner loop: idea → code → running app, without leaving the browser.
 
 ---
 
-## ✨ Features
+## Mapping Cross-Language Dependencies in Polyglot Codebases
 
-### 🤖 AI-Powered Development
-- **Intelligent Code Generation** - Describe your idea in natural language and watch NeoForge build it
-- **Multi-Model Support** - Switch between Claude, Gemini, and OpenRouter AI models
-- **Auto-Compile & Preview** - Full-stack apps automatically install dependencies and start dev servers
-- **Smart Code Review** - AI-powered code analysis with walkthroughs and suggestions
+Most real projects aren't written in one language. You might have a TypeScript frontend, a Python API, a Go service, and a Rust WASM module — all talking to each other through REST, gRPC, or shared schemas. The problem is that no single tool understands the full picture.
 
-### 🖥️ Browser-Based IDE
-- **WebContainer Execution** - Run Node.js, Python, and more directly in your browser
-- **Real-Time Preview** - Live application preview with hot reload
-- **File Explorer** - Complete project structure management
-- **Integrated Terminal** - Command execution within the browser
+NeoForge tackles this by building a dependency graph that spans all languages in the repo:
 
-### 🔗 GitHub Integration
-- **Repository Sync** - Clone and sync GitHub repositories
-- **Automated Reviews** - AI-powered PR reviews with detailed feedback
-- **Deployment Ready** - Push and deploy directly to GitHub
+- Parses `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, etc. and merges them into one unified graph
+- Traces calls across language boundaries — e.g. if your TypeScript client calls a Python endpoint, that edge shows up
+- When you change a shared interface or schema, it flags every downstream consumer across every language, not just the ones in the same file
+- Code review context includes the full call chain, so if a Python type changes, the reviewer knows whether it breaks the TypeScript side too
+- Visual graph view of all cross-language connections, filterable by language, service, or module
 
-### 👥 Collaboration
-- **Real-Time Editing** - Multi-user collaboration with live cursors
-- **Shared Terminals** - Collaborative command execution
-- **Chat Integration** - Team communication within projects
+This is especially useful in monorepos and microservice setups where keeping track of "what calls what" across stacks is a constant headache.
 
 ---
 
-## 🏗️ Architecture
+## Features
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              NeoForge Architecture                           │
-└─────────────────────────────────────────────────────────────────────────────┘
+**AI that writes code directly to the editor**
+Type a prompt. The AI generates files and writes them straight into your project. You see the file tree update in real time, and can preview the running app immediately after.
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CLIENT (Next.js 16)                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
-│  │   AI Chat   │  │  Code Editor│  │   Terminal  │  │    File     │      │
-│  │  Component  │  │  (CodeMirror)│  │  (xterm.js) │  │  Explorer   │      │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘      │
-│         │                │                │                │                │
-│         └────────────────┴────────────────┴────────────────┘                │
-│                                   │                                           │
-│                          ┌────────▼────────┐                                 │
-│                          │   Next.js App   │                                 │
-│                          │   Router (App)  │                                 │
-│                          └────────┬────────┘                                 │
-└───────────────────────────────────┼───────────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────┼───────────────────────────────────────────┐
-│                                   │           SERVER SIDE                     │
-├───────────────────────────────────┼───────────────────────────────────────────┤
-│                          ┌────────▼────────┐                                 │
-│                          │   API Routes   │                                 │
-│                          │  /api/ai/*     │                                 │
-│                          │  /api/github/* │                                 │
-│                          │  /api/webcont.*│                                 │
-│                          └────────┬────────┘                                 │
-│                                   │                                           │
-│    ┌──────────────────────────────┼──────────────────────────────┐         │
-│    │                              │                              │         │
-│ ┌──▼──────────┐    ┌─────────────▼─────────────┐    ┌───────────▼─────┐  │
-│  │  Convex    │    │      WebContainer         │    │    Pinecone     │  │
-│  │ (Real-time │    │   (Browser Runtime)        │    │  (Vector Store) │  │
-│  │  Database) │    │                            │    │                 │  │
-│  └────────────┘    └────────────────────────────┘    └─────────────────┘  │
-│                                                                             │
-│    ┌────────────────┐         ┌────────────────┐                           │
-│    │   Inngest      │         │  Better Auth   │                           │
-│    │ (Background    │         │ (Authentication│                           │
-│    │  Jobs)         │         │  & Sessions)   │                           │
-│    └────────────────┘         └────────────────┘                           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────┼───────────────────────────────────────────┐
-│                          ┌────────▼────────┐                                 │
-│                          │   PostgreSQL   │                                 │
-│                          │   (Prisma ORM) │                                 │
-│                          └─────────────────┘                                 │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+**In-browser execution**
+The terminal and runtime run inside the browser using WebContainers. No server needed. You can `npm install`, run dev servers, and see live output — all locally.
 
-### Core Components
+**GitHub integration**
+Connect a repo and NeoForge will pull it in, let you edit, and push back. It also runs automated AI code reviews on PRs with real line-level feedback.
 
-| Component | Description | Technology |
-|-----------|-------------|------------|
-| **IDE Core** | Main browser-based code editor | CodeMirror 6 |
-| **AI Chat** | Natural language code generation | Claude/Gemini API |
-| **Runtime** | Browser-based execution environment | WebContainer API |
-| **Real-time** | Live updates and collaboration | Convex |
-| **Search** | Semantic code search | Pinecone |
-| **Auth** | User authentication | Better Auth |
-| **Database** | Persistent data storage | PostgreSQL + Prisma |
+**Multi-model AI**
+Switch between Claude, Gemini, and OpenRouter models. The chat, code generation, and review features all use the same model selection.
+
+**Semantic code search**
+Repos get indexed into Pinecone so you can search by meaning, not just text. Useful for asking "where do we handle auth errors?" across a large codebase.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-### Frontend
-- **Framework** - Next.js 16 (App Router)
-- **UI Library** - React 19
-- **Styling** - Tailwind CSS 4
-- **Code Editor** - CodeMirror 6
-- **Terminal** - xterm.js
-- **Icons** - Lucide React
-
-### Backend
-- **Runtime** - Node.js (WebContainer)
-- **Database** - PostgreSQL (Prisma ORM)
-- **Real-time** - Convex
-- **Vector Search** - Pinecone
-- **Authentication** - Better Auth
-- **Background Jobs** - Inngest
-
-### AI Integration
-- **Claude** - Anthropic Claude API
-- **Gemini** - Google Gemini API
-- **OpenRouter** - Multi-provider aggregation
+- **Next.js 16** (App Router) + React 19
+- **CodeMirror 6** for the editor
+- **xterm.js** for the terminal
+- **WebContainer API** for in-browser Node.js execution
+- **Convex** for real-time file/project state
+- **PostgreSQL** via Prisma for users, repos, reviews
+- **Pinecone** for vector search
+- **Better Auth** for GitHub OAuth
+- **Inngest** for background jobs (indexing, review generation)
+- **Claude / Gemini / OpenRouter** for AI
 
 ---
 
-## 📊 Database Schema
+## Getting Started
 
-### PostgreSQL (Prisma)
+You'll need Node 18+, PostgreSQL, and API keys for GitHub OAuth and at least one AI provider.
 
-```prisma
-// Core Models
-User
-├── Account          (OAuth providers)
-├── Session          (Auth sessions)
-├── Repository       (GitHub repos)
-├── Review           (Code reviews)
-└── Subscription     (Pro/Free tier)
-
-// Repository Models
-Repository
-├── Review           (PR reviews)
-└── IndexedFile      (Searchable files)
-
-// Subscription Models
-Subscription
-└── User             (One-to-one)
-```
-
-### Convex (Real-time)
-
-```typescript
-// Tables
-files          // Project files with content
-projects       // Project metadata & status
-collaboration // Real-time cursor positions
-chatMessages   // Project chat history
-terminals      // Active terminal sessions
-```
-
-### Entity Relationship Diagram
-
-```
-┌──────────────┐       ┌──────────────┐
-│    User      │       │  Subscription│
-└──────┬───────┘       └──────┬───────┘
-       │                     │
-       │ 1:N                  │ 1:1
-       ▼                     │
-┌──────────────┐             │
-│  Repository  │◄────────────┘
-└──────┬───────┘
-       │
-       │ 1:N
-       ▼
-┌──────────────┐       ┌──────────────┐
-│    Review    │       │  IndexedFile │
-└──────────────┘       └──────────────┘
-```
-
----
-
-## 🚦 API Routes
-
-### AI Endpoints
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/ai/chat` | POST | AI chat with context |
-| `/api/ai/complete` | POST | Code completion |
-| `/api/ai/edit` | POST | Code editing |
-
-### GitHub Integration
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/github/repos` | GET | List user repositories |
-| `/api/github/sync` | POST | Sync repository |
-| `/api/github/commit` | POST | Commit changes |
-| `/api/github/webhook` | POST | GitHub webhook handler |
-
-### WebContainer
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/webcontainer/start` | POST | Boot WebContainer |
-| `/api/webcontainer/exec` | POST | Execute command |
-| `/api/webcontainer/run-file` | POST | Run code file |
-
-### Code Review
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/reviews` | GET/POST | List/Create reviews |
-| `/api/reviews/[id]` | GET/PATCH | Get/Update review |
-
-### Vector Search
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/pinecone/index` | POST | Index repository |
-| `/api/pinecone/search` | POST | Semantic search |
-
----
-
-## 🔧 Getting Started
-
-### Prerequisites
-
-```bash
-Node.js 18+
-PostgreSQL 14+
-npm or yarn
-```
-
-### Installation
-
-1. **Clone the repository**
 ```bash
 git clone https://github.com/yourusername/neoforge.git
 cd neoforge
-```
-
-2. **Install dependencies**
-```bash
 npm install
-```
-
-3. **Configure environment variables**
-```bash
 cp .env.example .env.local
 ```
 
-Required variables:
+Fill in `.env.local`:
+
 ```env
-# Database
 DATABASE_URL="postgresql://user:password@localhost:5432/neoforge"
-
-# Authentication
-AUTH_SECRET="your-auth-secret"
-
-# GitHub OAuth
-GITHUB_CLIENT_ID="your-github-client-id"
-GITHUB_CLIENT_SECRET="your-github-client-secret"
-
-# AI Providers
-ANTHROPIC_API_KEY="your-anthropic-key"
-GOOGLE_GEMINI_API_KEY="your-gemini-key"
-OPENROUTER_API_KEY="your-openrouter-key"
-
-# Pinecone
-PINECONE_API_KEY="your-pinecone-key"
-
-# Inngest
-INNGEST_EVENT_KEY="your-inngest-key"
-INNGEST_SIGNING_KEY="your-inngest-signing-key"
+BETTER_AUTH_SECRET="any-long-random-string"
+GITHUB_CLIENT_ID="..."
+GITHUB_CLIENT_SECRET="..."
+ANTHROPIC_API_KEY="..."        # or GOOGLE_GEMINI_API_KEY / OPENROUTER_API_KEY
+PINECONE_API_KEY="..."
+NEXT_PUBLIC_CONVEX_URL="..."
+INNGEST_EVENT_KEY="..."
+INNGEST_SIGNING_KEY="..."
 ```
 
-4. **Setup database**
+Then:
+
 ```bash
 npx prisma generate
 npx prisma db push
-```
-
-5. **Run development server**
-```bash
 npm run dev
 ```
 
-6. **Open browser**
-```
-http://localhost:3000
-```
+App runs at `http://localhost:3000`. For GitHub OAuth to work locally, set the callback URL in your GitHub OAuth app to `http://localhost:3000/api/auth/callback/github`.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
-neoforge/
-├── app/                          # Next.js App Router
-│   ├── (ide)/[projectId]/       # Main IDE page
-│   │   └── page.tsx             # IDE implementation
-│   ├── api/                     # API routes
-│   │   ├── ai/                  # AI endpoints
-│   │   ├── github/              # GitHub integration
-│   │   ├── webcontainer/       # Browser execution
-│   │   └── pinecone/            # Vector search
-│   ├── dashboard/               # User dashboard
-│   └── auth/                    # Authentication
-├── components/
-│   ├── ai-chat/                 # AI chat component
-│   ├── editor/                  # Code editor
-│   ├── file-explorer/           # File tree
-│   ├── terminal/                # Terminal
-│   └── ui/                      # Reusable UI
-├── lib/                         # Utilities
-├── prisma/                      # Database schema
-└── convex/                      # Real-time backend
+app/
+  (ide)/[projectId]/   — the actual IDE page
+  api/ai/              — chat, completion, edit endpoints
+  api/github/          — repo sync, webhooks, reviews
+  api/pinecone/        — index + search
+  dashboard/           — repo list, review history, settings
+components/
+  ai-chat/             — the AI chat panel
+  editor/              — CodeMirror wrapper
+  terminal/            — xterm.js terminal
+  file-explorer/       — file tree
+lib/
+  ai.ts                — AI provider abstraction
+  github.ts            — GitHub API helpers
+  pinecone.ts          — vector store helpers
+prisma/schema.prisma   — User, Repo, Review, Subscription models
+convex/schema.ts       — real-time files, projects, chat
 ```
 
 ---
 
-## 🔐 Security
+## API Routes
 
-- **Authentication** - Secure sessions with Better Auth
-- **OAuth** - GitHub OAuth 2.0 integration
-- **API Keys** - Server-side API key handling
-- **Input Sanitization** - XSS prevention in AI responses
-- **Rate Limiting** - API request throttling
+| Route | What it does |
+|---|---|
+| `POST /api/ai/chat` | AI chat with project context |
+| `POST /api/ai/edit` | Apply an AI edit to a file |
+| `GET /api/github/repos` | List connected repos |
+| `POST /api/github/webhook` | Handle GitHub events |
+| `POST /api/webcontainer/start` | Boot a WebContainer session |
+| `POST /api/webcontainer/exec` | Run a command in it |
+| `POST /api/pinecone/index` | Index a repo |
+| `POST /api/pinecone/search` | Semantic search |
+| `GET/POST /api/reviews` | List or create code reviews |
 
 ---
 
-## 📄 License
+## License
 
-MIT License - feel free to use this project for your own purposes.
+MIT. Do whatever you want with it.
 
----
-
-<div align="center">
-
-**Built with ❤️ using Next.js, React, and WebContainer API**
-
-*[Star us on GitHub](https://github.com/yourusername/neoforge) • [Report Bug](https://github.com/yourusername/neoforge/issues)*
-
-</div>
