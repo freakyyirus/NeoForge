@@ -183,8 +183,17 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
       });
     }
 
+    // D3 forceLink throws when an edge references a node id that doesn't exist.
+    // Some parsers emit external/unresolved imports as edges; ignore those safely.
+    const validNodeIds = new Set(filteredNodes.map((n) => n.id));
+    const safeLinks = filteredLinks.filter((l) => {
+      const sourceId = typeof l.source === 'string' ? l.source : l.source.id;
+      const targetId = typeof l.target === 'string' ? l.target : l.target.id;
+      return validNodeIds.has(sourceId) && validNodeIds.has(targetId);
+    });
+
     const nodes = filteredNodes.map(d => ({ ...d }));
-    const links = filteredLinks.map(d => ({ ...d }));
+    const links = safeLinks.map(d => ({ ...d }));
 
     const simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(links).id((d: any) => d.id).distance(100))
