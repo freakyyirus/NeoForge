@@ -525,7 +525,7 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
             <Network className="h-5 w-5" />
             Polyglot Dependency Graph
             <Badge variant="secondary">{renderedGraphData?.nodes.length || 0} nodes</Badge>
-            <Badge variant="outline">{graphMode === 'dag' ? 'DAG' : 'FULL'}</Badge>
+            <Badge variant="default">{graphMode === 'dag' ? 'DAG' : 'FULL'}</Badge>
           </CardTitle>
           <div className="flex items-center gap-2">
             <Button

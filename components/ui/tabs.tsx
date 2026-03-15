@@ -64,7 +64,7 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
         ref={ref}
         type="button"
         className={cn(
-          "flex-1 rounded-md px-4 py-2 text-sm font-bold transition-all",
+          "flex-1 rounded-md px-4 py-2 text-sm font-bold transition-none duration-0",
           "hover:bg-white",
           isActive && "bg-white shadow-[2px_2px_0px_0px_#000]",
           className
@@ -84,12 +84,13 @@ interface TabsContentProps extends React.HTMLAttributes<HTMLDivElement> {
 const TabsContent = React.forwardRef<HTMLDivElement, TabsContentProps>(
   ({ className, value: contentValue, ...props }, ref) => {
     const { value } = React.useContext(TabsContext);
-
-    if (value !== contentValue) return null;
+    const isActive = value === contentValue;
 
     return (
       <div
         ref={ref}
+        hidden={!isActive}
+        aria-hidden={!isActive}
         className={cn("mt-4 focus:outline-none", className)}
         {...props}
       />
