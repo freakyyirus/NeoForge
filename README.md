@@ -29,12 +29,19 @@ NeoForge ships a **Polyglot Dependency Intelligence Engine** — a deterministic
 
 **How it works:**
 
-It uses [tree-sitter](https://tree-sitter.github.io) to parse TypeScript, Go, and Python source files into concrete syntax trees, then extracts specific nodes — `fetch`/axios calls, Express and Gin route definitions, exported types and structs, Prisma models, and SQL `CREATE TABLE` statements. From those nodes it builds a Directed Acyclic Graph (DAG) in memory, inferring edges by matching URL patterns across languages (so a `fetch("/api/users")` in TypeScript gets linked to `router.GET("/api/users", ...)` in Go), linking route handlers to the types they use, and wiring Prisma models to their SQL table counterparts.
+It uses [tree-sitter](https://tree-sitter.github.io) to parse TypeScript, Go, and Python source files into concrete syntax trees, then extracts specific nodes — `fetch`/axios calls, Express and Gin route definitions, exported types and structs, Prisma models, and SQL `CREATE TABLE` statements. From those nodes it builds a directed dependency graph in memory, inferring edges by matching URL patterns across languages (so a `fetch("/api/users")` in TypeScript gets linked to `router.GET("/api/users", ...)` in Go), linking route handlers to the types they use, and wiring Prisma models to their SQL table counterparts.
 
 **What you can do with it:**
 
-- `POST /api/dependencies/graph` — returns the full DAG in a format ready for D3.js force-directed rendering, so you can visualise your entire cross-language call graph
+- `POST /api/dependencies/graph` — returns the full directed dependency graph in a format ready for D3.js force-directed rendering
 - `POST /api/dependencies/impact` — give it any node ID (a file path, a route, a type) and it runs a BFS traversal to return every upstream and downstream component that would break if that node changes — the "blast radius"
+
+In the IDE graph panel, you can switch between:
+
+- **FULL** mode: raw dependency graph (keeps cycles visible)
+- **DAG** mode: cycle-collapsed graph (strongly connected components are merged into super-nodes)
+
+DAG mode also shows which files were collapsed into each cycle node in hover and selection details.
 
 This is all static analysis. No AI involved in the graph construction — the edges are structural, not guessed.
 
@@ -80,6 +87,9 @@ Switch between Claude, Gemini, and OpenRouter models. The chat, code generation,
 
 **Semantic code search**
 Repos get indexed into Pinecone so you can search by meaning, not just text. Useful for asking "where do we handle auth errors?" across a large codebase.
+
+**Interactive dependency graph (FULL + DAG)**
+Visualize cross-language dependencies with curved wire links between nodes, smooth zoom controls, and instant tab switching in the IDE panel. Toggle to DAG mode to collapse cycles and inspect grouped files per cycle node.
 
 ---
 
@@ -255,4 +265,3 @@ convex/schema.ts       — real-time files, projects, chat
 MIT. Do whatever you want with it.
 
 
-Testing Pull Request for NeoForge
