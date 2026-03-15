@@ -139,6 +139,7 @@ export default function IDEPage() {
   const repoBaselineRef = useRef<Record<string, string>>({});
   const aiApplyHistoryRef = useRef<WorkspaceSnapshot[]>([]);
   const [canRevertLastApply, setCanRevertLastApply] = useState(false);
+  const lastDetectedPreviewUrlRef = useRef("");
 
   const normalizePath = useCallback((inputPath: string) => {
     const normalized = inputPath.replace(/\\/g, "/").trim();
@@ -695,11 +696,38 @@ export default function IDEPage() {
     setIsExecuting(true);
     setTerminalOutput((prev) => [...prev, `$ ${command}`]);
 
+    const detectPreviewUrl = (text: string): string | null => {
+      const directUrl = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}(?:\/[^\s]*)?/i)?.[0];
+      if (directUrl) {
+        return directUrl.replace("0.0.0.0", "localhost");
+      }
+
+      const portMatch = text.match(/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)\s*[:=]\s*(\d{2,5})/i) ||
+        text.match(/(?:port|listening on|ready on|started on)\s*(?:http:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0)?\s*:?(\d{2,5})/i);
+      if (portMatch?.[1]) {
+        return `http://localhost:${portMatch[1]}`;
+      }
+
+      return null;
+    };
+
+    const syncPreviewUrlFromOutput = (text: string) => {
+      const detected = detectPreviewUrl(text);
+      if (!detected || detected === lastDetectedPreviewUrlRef.current) return;
+      lastDetectedPreviewUrlRef.current = detected;
+      setPreviewUrl(detected);
+      setPreviewMode("editor");
+      setActiveTab("preview");
+      setTerminalOutput((prev) => [...prev, `[preview] Detected running app at ${detected}`]);
+    };
+
     const lower = command.toLowerCase();
     if (lower.includes("npm run dev") || lower.includes("pnpm dev") || lower.includes("yarn dev") || lower.includes("next dev")) {
       setActiveTab("preview");
+      setPreviewMode("editor");
       setTerminalOutput((prev) => [...prev, "[preview] Opening preview tab at http://localhost:3000"]);
       setPreviewUrl("http://localhost:3000");
+      lastDetectedPreviewUrlRef.current = "http://localhost:3000";
     }
 
     try {
@@ -726,6 +754,7 @@ export default function IDEPage() {
       const appendChunkLines = (chunk: string, kind: "stdout" | "stderr") => {
         const lines = chunk.replace(/\r\n/g, "\n").split("\n").filter((line) => line.length > 0);
         if (lines.length === 0) return;
+        lines.forEach((line) => syncPreviewUrlFromOutput(line));
         setTerminalOutput((prev) => [...prev, ...lines.map((line) => (kind === "stderr" ? `[stderr] ${line}` : line))]);
       };
 
@@ -1257,7 +1286,7 @@ export default function IDEPage() {
 
         const normalizePathInRuntime = (value) => {
           const replaced = String(value || "").replace(/\\\\/g, "/");
-          const prefixed = replaced.startsWith("/") ? replaced : `/${replaced}`;
+          const prefixed = replaced.startsWith("/") ? replaced : "/" + replaced;
           return prefixed.replace(/\/+/g, "/");
         };
 
@@ -1271,17 +1300,17 @@ export default function IDEPage() {
           const normalized = normalizePathInRuntime(basePath);
           const extCandidates = [
             normalized,
-            `${normalized}.tsx`,
-            `${normalized}.ts`,
-            `${normalized}.jsx`,
-            `${normalized}.js`,
-            `${normalized}.mjs`,
-            `${normalized}.json`,
-            `${normalized}.css`,
-            `${normalized}/index.tsx`,
-            `${normalized}/index.ts`,
-            `${normalized}/index.jsx`,
-            `${normalized}/index.js`,
+            normalized + ".tsx",
+            normalized + ".ts",
+            normalized + ".jsx",
+            normalized + ".js",
+            normalized + ".mjs",
+            normalized + ".json",
+            normalized + ".css",
+            normalized + "/index.tsx",
+            normalized + "/index.ts",
+            normalized + "/index.jsx",
+            normalized + "/index.js",
           ];
           return extCandidates.find((candidate) => Object.prototype.hasOwnProperty.call(files, candidate)) || null;
         };
@@ -1289,14 +1318,14 @@ export default function IDEPage() {
         const resolveSpecifier = (fromPath, specifier) => {
           if (!specifier) return null;
           if (specifier.startsWith("http://") || specifier.startsWith("https://") || specifier.startsWith("//")) {
-            return `@external:${specifier}`;
+            return "@external:" + specifier;
           }
           if (!specifier.startsWith(".") && !specifier.startsWith("/")) {
-            return `@npm:${specifier}`;
+            return "@npm:" + specifier;
           }
 
           const sourceDir = dirname(fromPath);
-          const combined = specifier.startsWith("/") ? specifier : `${sourceDir}/${specifier}`;
+          const combined = specifier.startsWith("/") ? specifier : sourceDir + "/" + specifier;
           const segments = combined.split("/").filter(Boolean);
           const resolved = [];
           segments.forEach((segment) => {
@@ -1308,7 +1337,7 @@ export default function IDEPage() {
             resolved.push(segment);
           });
 
-          return withExtensions(`/${resolved.join("/")}`);
+          return withExtensions("/" + resolved.join("/"));
         };
 
         const injectCss = (path) => {
@@ -1333,7 +1362,7 @@ export default function IDEPage() {
                 : (container) => ({ render: (node) => window.ReactDOM.render(node, container) }),
             };
           }
-          throw new Error(`Unsupported package in runtime preview: ${specifier}`);
+          throw new Error("Unsupported package in runtime preview: " + specifier);
         };
 
         const executeModule = (modulePath) => {
@@ -1342,7 +1371,7 @@ export default function IDEPage() {
 
           const source = files[normalized];
           if (typeof source !== "string") {
-            throw new Error(`Module not found: ${normalized}`);
+            throw new Error("Module not found: " + normalized);
           }
 
           if (normalized.endsWith(".css")) {
@@ -1377,18 +1406,18 @@ export default function IDEPage() {
           const localRequire = (specifier) => {
             const resolved = resolveSpecifier(normalized, specifier);
             if (!resolved) {
-              throw new Error(`Unable to resolve '${specifier}' from ${normalized}`);
+              throw new Error("Unable to resolve '" + specifier + "' from " + normalized);
             }
             if (resolved.startsWith("@npm:")) {
               return requireNpm(resolved.slice(5));
             }
             if (resolved.startsWith("@external:")) {
-              throw new Error(`External module import is not supported in runtime preview: ${specifier}`);
+              throw new Error("External module import is not supported in runtime preview: " + specifier);
             }
             return executeModule(resolved);
           };
 
-          const wrapped = new Function("require", "module", "exports", transpiled + `\n//# sourceURL=${normalized}`);
+          const wrapped = new Function("require", "module", "exports", transpiled + "\n//# sourceURL=" + normalized);
           wrapped(localRequire, module, module.exports);
           moduleCache[normalized] = module.exports;
           return module.exports;
@@ -1398,11 +1427,12 @@ export default function IDEPage() {
           executeModule(__NEOFORGE_ENTRY__);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          document.body.innerHTML = `
-            <div style="padding:16px;font-family:ui-monospace,Menlo,Consolas,monospace;">
-              <h3 style="margin:0 0 8px;">Runtime preview failed</h3>
-              <pre style="white-space:pre-wrap;background:#111;color:#f87171;padding:12px;border-radius:8px;">${message.replace(/</g, "&lt;")}</pre>
-            </div>`;
+          document.body.innerHTML =
+            '<div style="padding:16px;font-family:ui-monospace,Menlo,Consolas,monospace;">' +
+            '<h3 style="margin:0 0 8px;">Runtime preview failed</h3>' +
+            '<pre style="white-space:pre-wrap;background:#111;color:#f87171;padding:12px;border-radius:8px;">' +
+            message.replace(/</g, "&lt;") +
+            '</pre></div>';
         }
       })();
     </script>
@@ -1492,7 +1522,7 @@ export default function IDEPage() {
 
         const normalizePathInRuntime = (value) => {
           const replaced = String(value || "").replace(/\\\\/g, "/");
-          const prefixed = replaced.startsWith("/") ? replaced : `/${replaced}`;
+          const prefixed = replaced.startsWith("/") ? replaced : "/" + replaced;
           return prefixed.replace(/\/+/g, "/");
         };
 
@@ -1506,17 +1536,17 @@ export default function IDEPage() {
           const normalized = normalizePathInRuntime(basePath);
           const extCandidates = [
             normalized,
-            `${normalized}.tsx`,
-            `${normalized}.ts`,
-            `${normalized}.jsx`,
-            `${normalized}.js`,
-            `${normalized}.mjs`,
-            `${normalized}.json`,
-            `${normalized}.css`,
-            `${normalized}/index.tsx`,
-            `${normalized}/index.ts`,
-            `${normalized}/index.jsx`,
-            `${normalized}/index.js`,
+            normalized + ".tsx",
+            normalized + ".ts",
+            normalized + ".jsx",
+            normalized + ".js",
+            normalized + ".mjs",
+            normalized + ".json",
+            normalized + ".css",
+            normalized + "/index.tsx",
+            normalized + "/index.ts",
+            normalized + "/index.jsx",
+            normalized + "/index.js",
           ];
           return extCandidates.find((candidate) => Object.prototype.hasOwnProperty.call(files, candidate)) || null;
         };
@@ -1524,14 +1554,14 @@ export default function IDEPage() {
         const resolveSpecifier = (fromPath, specifier) => {
           if (!specifier) return null;
           if (specifier.startsWith("http://") || specifier.startsWith("https://") || specifier.startsWith("//")) {
-            return `@external:${specifier}`;
+            return "@external:" + specifier;
           }
           if (!specifier.startsWith(".") && !specifier.startsWith("/")) {
-            return `@npm:${specifier}`;
+            return "@npm:" + specifier;
           }
 
           const sourceDir = dirname(fromPath);
-          const combined = specifier.startsWith("/") ? specifier : `${sourceDir}/${specifier}`;
+          const combined = specifier.startsWith("/") ? specifier : sourceDir + "/" + specifier;
           const segments = combined.split("/").filter(Boolean);
           const resolved = [];
           segments.forEach((segment) => {
@@ -1543,7 +1573,7 @@ export default function IDEPage() {
             resolved.push(segment);
           });
 
-          return withExtensions(`/${resolved.join("/")}`);
+          return withExtensions("/" + resolved.join("/"));
         };
 
         const injectCss = (path) => {
@@ -1568,7 +1598,7 @@ export default function IDEPage() {
                 : (container) => ({ render: (node) => window.ReactDOM.render(node, container) }),
             };
           }
-          throw new Error(`Unsupported package in runtime preview: ${specifier}`);
+          throw new Error("Unsupported package in runtime preview: " + specifier);
         };
 
         const executeModule = (modulePath) => {
@@ -1577,7 +1607,7 @@ export default function IDEPage() {
 
           const source = files[normalized];
           if (typeof source !== "string") {
-            throw new Error(`Module not found: ${normalized}`);
+            throw new Error("Module not found: " + normalized);
           }
 
           if (normalized.endsWith(".css")) {
@@ -1612,18 +1642,18 @@ export default function IDEPage() {
           const localRequire = (specifier) => {
             const resolved = resolveSpecifier(normalized, specifier);
             if (!resolved) {
-              throw new Error(`Unable to resolve '${specifier}' from ${normalized}`);
+              throw new Error("Unable to resolve '" + specifier + "' from " + normalized);
             }
             if (resolved.startsWith("@npm:")) {
               return requireNpm(resolved.slice(5));
             }
             if (resolved.startsWith("@external:")) {
-              throw new Error(`External module import is not supported in runtime preview: ${specifier}`);
+              throw new Error("External module import is not supported in runtime preview: " + specifier);
             }
             return executeModule(resolved);
           };
 
-          const wrapped = new Function("require", "module", "exports", transpiled + `\n//# sourceURL=${normalized}`);
+          const wrapped = new Function("require", "module", "exports", transpiled + "\n//# sourceURL=" + normalized);
           wrapped(localRequire, module, module.exports);
           moduleCache[normalized] = module.exports;
           return module.exports;
@@ -1633,11 +1663,12 @@ export default function IDEPage() {
           executeModule(__NEOFORGE_ENTRY__);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          document.body.innerHTML = `
-            <div style="padding:16px;font-family:ui-monospace,Menlo,Consolas,monospace;">
-              <h3 style="margin:0 0 8px;">Runtime preview failed</h3>
-              <pre style="white-space:pre-wrap;background:#111;color:#f87171;padding:12px;border-radius:8px;">${message.replace(/</g, "&lt;")}</pre>
-            </div>`;
+          document.body.innerHTML =
+            '<div style="padding:16px;font-family:ui-monospace,Menlo,Consolas,monospace;">' +
+            '<h3 style="margin:0 0 8px;">Runtime preview failed</h3>' +
+            '<pre style="white-space:pre-wrap;background:#111;color:#f87171;padding:12px;border-radius:8px;">' +
+            message.replace(/</g, "&lt;") +
+            '</pre></div>';
         }
       })();
     </script>

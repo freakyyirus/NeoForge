@@ -354,7 +354,8 @@ export async function chatWithAI(
   const CHAT_MAX_TOKENS = 1800;
   const outputGuidance =
     "When returning code edits for one file, use a fenced code block. " +
-    "For workspace changes with folders and multiple files, prefer this JSON block format: ```json {\"folders\":[\"/src/components\"],\"files\":[{\"path\":\"/src/components/Button.tsx\",\"content\":\"...full file content...\"}]} ```. " +
+    "For workspace changes with folders and multiple files, return EXACTLY one fenced json block in this shape: ```json {\"folders\":[\"/src/components\"],\"files\":[{\"path\":\"/src/components/Button.tsx\",\"content\":\"...full file content...\"}],\"deletedFiles\":[]} ```. " +
+    "Inside JSON content fields, preserve real newlines and valid escaped JSON strings. Do not emit partial object fragments. " +
     "As a fallback, for multi-file edits use: `### File: /path/to/file.ext` then a fenced code block with full file content. " +
     "If the user asks to create or edit multiple files/folders, return ONLY the JSON block and no prose. " +
     "Keep responses concise and avoid long explanations unless the user explicitly asks for explanation.";
