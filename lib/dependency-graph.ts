@@ -534,7 +534,7 @@ export function parseImports(filePath: string, content: string): ImportStatement
     
     while ((match = regex.exec(content)) !== null) {
       const source = match[1];
-      const isLocal = source.startsWith('.') || source.startsWith('/');
+      const isLocal = source.startsWith('.') || source.startsWith('/') || source.startsWith('@/');
       
       imports.push({
         source,
@@ -672,29 +672,59 @@ export function buildDependencyGraph(files: Record<string, string>): DependencyG
   };
 }
 
+function normalizeFsPath(p: string): string {
+  // Resolve . and .. segments in a path like /src/components/./Button => /src/components/Button
+  const parts = p.split('/');
+  const resolved: string[] = [];
+  for (const part of parts) {
+    if (part === '.' || part === '') {
+      if (resolved.length === 0) resolved.push(''); // preserve leading /
+      continue;
+    }
+    if (part === '..') {
+      if (resolved.length > 1) resolved.pop();
+      continue;
+    }
+    resolved.push(part);
+  }
+  return resolved.join('/') || '/';
+}
+
 function resolveLocalImport(importPath: string, source: string, filePaths: string[]): string | null {
-  const baseDir = importPath.substring(0, importPath.lastIndexOf('/') + 1);
+  // Get the directory of the importing file
+  const lastSlash = importPath.lastIndexOf('/');
+  const baseDir = lastSlash >= 0 ? importPath.substring(0, lastSlash) : '';
   
-  const candidates = [
-    source,
-    `${source}.ts`,
-    `${source}.tsx`,
-    `${source}.js`,
-    `${source}.jsx`,
-    `${source}/index.ts`,
-    `${source}/index.tsx`,
-    `${source}/index.js`,
-    `${source}/index.jsx`,
-    `${baseDir}${source}`,
-    `${baseDir}${source}.ts`,
-    `${baseDir}${source}.tsx`,
-    `${baseDir}${source}.js`,
-    `${baseDir}${source}.jsx`,
-    `${baseDir}${source}/index.ts`,
-    `${baseDir}${source}/index.tsx`,
-    `${baseDir}${source}/index.js`,
-    `${baseDir}${source}/index.jsx`,
-  ];
+  // Handle @/ alias (Next.js convention) — maps to project root /
+  let resolvedSource = source;
+  if (source.startsWith('@/')) {
+    resolvedSource = '/' + source.slice(2);
+  }
+  
+  // Build the full resolved path
+  let fullPath: string;
+  if (resolvedSource.startsWith('/')) {
+    fullPath = resolvedSource;
+  } else {
+    // Relative path: join with baseDir
+    fullPath = normalizeFsPath(`${baseDir}/${resolvedSource}`);
+  }
+  
+  // Generate candidates with various extensions and index files
+  const extensions = ['.ts', '.tsx', '.js', '.jsx'];
+  const candidates: string[] = [fullPath];
+  for (const ext of extensions) {
+    candidates.push(`${fullPath}${ext}`);
+    candidates.push(`${fullPath}/index${ext}`);
+  }
+  
+  // Also try without leading slash in case file paths don't have one
+  const withoutLeadingSlash = fullPath.startsWith('/') ? fullPath.slice(1) : fullPath;
+  candidates.push(withoutLeadingSlash);
+  for (const ext of extensions) {
+    candidates.push(`${withoutLeadingSlash}${ext}`);
+    candidates.push(`${withoutLeadingSlash}/index${ext}`);
+  }
   
   for (const candidate of candidates) {
     if (filePaths.includes(candidate)) {
