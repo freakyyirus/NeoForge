@@ -7,8 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Github, Loader2, Code2 } from "lucide-react";
 import { createAuthClient } from "better-auth/client";
 
+const resolvedBaseUrl =
+  process.env.NEXT_PUBLIC_URL ||
+  (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000");
+
 const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_URL || "http://localhost:3000",
+  baseURL: resolvedBaseUrl,
 });
 
 export default function SignInContent() {
