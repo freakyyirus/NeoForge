@@ -436,6 +436,37 @@ export function AIChat({
           ? [...context, { type: "editor_errors", data: editorErrors }]
           : context;
 
+      const deleteTargetsFromInput = extractDeleteTargetsFromText(input);
+      const isDeleteOnlyIntent =
+        deleteTargetsFromInput.length > 0 &&
+        !/\b(create|add|build|generate|write|implement|scaffold|setup)\b/i.test(input);
+
+      // If user clearly asks to delete, apply immediately instead of generating scaffold responses.
+      if (isDeleteOnlyIntent && onApplyWorkspacePlan) {
+        const appliedResult = await onApplyWorkspacePlan({
+          folders: [],
+          files: [],
+          deletedFiles: deleteTargetsFromInput,
+        });
+        const appliedFiles = sanitizeAppliedFiles(
+          (appliedResult && appliedResult.length > 0
+            ? appliedResult
+            : deleteTargetsFromInput.map((path) => `🗑️ ${path}`)
+          ).filter(Boolean)
+        );
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: `Deleted: ${deleteTargetsFromInput.join(", ")}`,
+          timestamp: new Date(),
+          appliedFiles: appliedFiles.length > 0 ? appliedFiles : undefined,
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+        return;
+      }
+
       const stopIntent = /\b(stop|pause|hold|wait|cancel)\b/i.test(input);
       const workspaceIntent = !stopIntent && /\b(folder|folders|file|files|project|scaffold|structure|setup|create|edit|build|make|write|generate|add|implement|delete|remove|rm|app|website|webpage|product|full[-\s]?stack|backend|frontend|api|dashboard)\b/i.test(input);
       const pushDeployIntent = /\b(push|commit|deploy|redeploy|publish|ship)\b/i.test(input);
@@ -459,7 +490,6 @@ export function AIChat({
       const firstCodeBlock = extractCodeBlock(response);
       const multiFileEdits = extractMultiFileEdits(response);
       const workspacePlan = extractWorkspacePlan(response);
-      const deleteTargetsFromInput = extractDeleteTargetsFromText(input);
       const finalWorkspacePlan = {
         ...workspacePlan,
         deletedFiles: Array.from(new Set([...workspacePlan.deletedFiles, ...deleteTargetsFromInput])),
