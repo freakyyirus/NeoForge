@@ -197,95 +197,6 @@ const relationColors: Record<string, string> = {
   'cross-boundary': '#ef4444',
 };
 
-const MOCK_PDG: GraphData = {
-  nodes: [
-    {
-      id: 'ts:app/(ide)/[projectId]/page.tsx',
-      label: 'IDE Page',
-      kind: 'typescript',
-      language: 'typescript',
-      filePath: 'app/(ide)/[projectId]/page.tsx',
-      line: 1,
-    },
-    {
-      id: 'ts:components/dependency-graph/d3-dependency-graph.tsx',
-      label: 'D3 Graph',
-      kind: 'typescript',
-      language: 'typescript',
-      filePath: 'components/dependency-graph/d3-dependency-graph.tsx',
-      line: 1,
-    },
-    {
-      id: 'api:/api/dependencies/graph',
-      label: '/api/dependencies/graph',
-      kind: 'api_route',
-      language: 'typescript',
-      filePath: 'app/api/dependencies/graph/route.ts',
-      line: 1,
-    },
-    {
-      id: 'ts:lib/dependency-engine/scanner.ts',
-      label: 'Scanner',
-      kind: 'typescript',
-      language: 'typescript',
-      filePath: 'lib/dependency-engine/scanner.ts',
-      line: 1,
-    },
-    {
-      id: 'ts:lib/dependency-engine/dag.ts',
-      label: 'DAG Core',
-      kind: 'typescript',
-      language: 'typescript',
-      filePath: 'lib/dependency-engine/dag.ts',
-      line: 1,
-    },
-    {
-      id: 'go:handlers/users.go',
-      label: 'Users Handler',
-      kind: 'go_handler',
-      language: 'go',
-      filePath: 'services/user-api/handlers/users.go',
-      line: 12,
-    },
-    {
-      id: 'py:api/users.py',
-      label: 'Users Service',
-      kind: 'python',
-      language: 'python',
-      filePath: 'services/ml-api/api/users.py',
-      line: 8,
-    },
-    {
-      id: 'prisma:model:User',
-      label: 'User Model',
-      kind: 'prisma_model',
-      language: 'prisma',
-      filePath: 'prisma/schema.prisma',
-      line: 22,
-    },
-    {
-      id: 'sql:users',
-      label: 'users table',
-      kind: 'sql_table',
-      language: 'sql',
-      filePath: 'db/schema.sql',
-      line: 45,
-    },
-  ],
-  links: [
-    { source: 'ts:app/(ide)/[projectId]/page.tsx', target: 'ts:components/dependency-graph/d3-dependency-graph.tsx', relation: 'import' },
-    { source: 'ts:components/dependency-graph/d3-dependency-graph.tsx', target: 'api:/api/dependencies/graph', relation: 'calls' },
-    { source: 'api:/api/dependencies/graph', target: 'ts:lib/dependency-engine/scanner.ts', relation: 'dependency' },
-    { source: 'ts:lib/dependency-engine/scanner.ts', target: 'ts:lib/dependency-engine/dag.ts', relation: 'dependency' },
-    { source: 'ts:lib/dependency-engine/dag.ts', target: 'go:handlers/users.go', relation: 'cross-boundary' },
-    { source: 'ts:lib/dependency-engine/dag.ts', target: 'py:api/users.py', relation: 'cross-boundary' },
-    { source: 'go:handlers/users.go', target: 'prisma:model:User', relation: 'implements' },
-    { source: 'py:api/users.py', target: 'prisma:model:User', relation: 'implements' },
-    { source: 'prisma:model:User', target: 'sql:users', relation: 'defines' },
-    { source: 'ts:lib/dependency-engine/dag.ts', target: 'ts:lib/dependency-engine/scanner.ts', relation: 'import' },
-  ],
-};
-
 export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 500 }: D3DependencyGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -304,14 +215,6 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     if (!graphData) return null;
     return graphMode === 'dag' ? buildDAGGraph(graphData) : graphData;
   }, [graphData, graphMode]);
-
-  const loadMockGraph = useCallback(() => {
-    setGraphData(MOCK_PDG);
-    setError(null);
-    setLoading(false);
-    setSelectedNode(null);
-    setHoveredNode(null);
-  }, []);
 
   const fetchGraph = useCallback(async () => {
     setLoading(true);
@@ -379,7 +282,9 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
-      .wheelDelta((event) => -event.deltaY * 0.0012)
+      .wheelDelta((event) => -event.deltaY * 0.0008)
+      .duration(360)
+      .interpolate(d3.interpolateZoom)
       .on('zoom', (event) => {
         g.attr('transform', event.transform);
       });
@@ -428,22 +333,23 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     const links = safeLinks.map(d => ({ ...d }));
 
     const simulation = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(links).id((d: any) => d.id).distance(130))
-      .force('charge', d3.forceManyBody().strength(-340))
+      .force('link', d3.forceLink(links).id((d: any) => d.id).distance(155))
+      .force('charge', d3.forceManyBody().strength(-420))
       .force('center', d3.forceCenter(width / 2, graphHeight / 2))
-      .force('collision', d3.forceCollide().radius(56));
+      .force('collision', d3.forceCollide().radius(64))
+      .alphaDecay(0.08)
+      .velocityDecay(0.35);
 
     simulationRef.current = simulation;
 
     const link = g.append('g')
       .attr('class', 'links')
-      .selectAll('path')
+      .selectAll('line')
       .data(links)
-      .join('path')
-      .attr('fill', 'none')
-      .attr('stroke', d => relationColors[d.relation] || '#6b7280')
-      .attr('stroke-opacity', 0.85)
-      .attr('stroke-width', d => (d.relation === 'cross-boundary' ? 2.8 : 2.2))
+      .join('line')
+      .attr('stroke', '#5b6470')
+      .attr('stroke-opacity', 0.9)
+      .attr('stroke-width', d => (d.relation === 'cross-boundary' ? 2.4 : 2.1))
       .attr('marker-end', 'url(#arrow)');
 
     const node = g.append('g')
@@ -470,19 +376,34 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
 
     // Node circles
     node.append('circle')
-      .attr('r', 24)
-      .attr('fill', d => kindConfig[d.kind]?.color || '#6b7280')
-      .attr('stroke', '#fff')
-      .attr('stroke-width', 2.5);
+      .attr('r', 30)
+      .attr('fill', d => {
+        const color = kindConfig[d.kind]?.color || '#6b7280';
+        const parsed = d3.color(color);
+        if (!parsed) return 'rgba(107,114,128,0.18)';
+        parsed.opacity = 0.18;
+        return parsed.toString();
+      })
+      .attr('stroke', d => kindConfig[d.kind]?.color || '#6b7280')
+      .attr('stroke-width', 4);
 
     // Node labels
     node.append('text')
-      .text(d => d.label.length > 20 ? d.label.substring(0, 17) + '...' : d.label)
+      .text(d => d.label.length > 24 ? d.label.substring(0, 21) + '...' : d.label)
       .attr('x', 0)
-      .attr('y', 40)
+      .attr('y', 58)
       .attr('text-anchor', 'middle')
-      .attr('font-size', '12px')
-      .attr('fill', '#374151')
+      .attr('font-size', '11px')
+      .attr('fill', '#f3f4f6')
+      .attr('font-weight', '700');
+
+    node.append('text')
+      .text(d => (d.language || 'unknown').toUpperCase())
+      .attr('x', 0)
+      .attr('y', 76)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '9px')
+      .attr('fill', '#9ca3af')
       .attr('font-weight', '700');
 
     node.on('click', (event, d) => {
@@ -494,38 +415,23 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     node.on('mouseenter', (event, d) => {
       setHoveredNode(d);
       d3.select(event.currentTarget).select('circle')
-        .attr('stroke', '#000')
-        .attr('stroke-width', 3);
+        .attr('stroke', '#f9fafb')
+        .attr('stroke-width', 4.5);
     });
 
     node.on('mouseleave', (event, d) => {
       setHoveredNode(null);
       d3.select(event.currentTarget).select('circle')
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 2.5);
+        .attr('stroke', kindConfig[d.kind]?.color || '#6b7280')
+        .attr('stroke-width', 4);
     });
 
     simulation.on('tick', () => {
       link
-        .attr('d', d => {
-          const source = d.source as GraphNode;
-          const target = d.target as GraphNode;
-          const x1 = source.x ?? 0;
-          const y1 = source.y ?? 0;
-          const x2 = target.x ?? 0;
-          const y2 = target.y ?? 0;
-
-          const dx = x2 - x1;
-          const dy = y2 - y1;
-          const distance = Math.hypot(dx, dy) || 1;
-          const nx = -dy / distance;
-          const ny = dx / distance;
-          const curve = Math.min(22, distance * 0.18);
-          const cx = (x1 + x2) / 2 + nx * curve;
-          const cy = (y1 + y2) / 2 + ny * curve;
-
-          return `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`;
-        });
+        .attr('x1', d => (d.source as GraphNode).x ?? 0)
+        .attr('y1', d => (d.source as GraphNode).y ?? 0)
+        .attr('x2', d => (d.target as GraphNode).x ?? 0)
+        .attr('y2', d => (d.target as GraphNode).y ?? 0);
 
       node.attr('transform', d => `translate(${d.x},${d.y})`);
     });
@@ -552,37 +458,40 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
     setFilterKind(newFilter);
   };
 
-  const zoomIn = () => {
+  const applySmoothScale = (factor: number) => {
     if (svgRef.current && zoomBehaviorRef.current) {
       const svg = d3.select(svgRef.current);
       const zoomBehavior = zoomBehaviorRef.current;
-      svg.transition().duration(320).ease(d3.easeCubicOut).call(
+      svg.interrupt();
+      svg.transition().duration(420).ease(d3.easeCubicInOut).call(
         (zoomBehavior.scaleBy as any),
-        1.3
+        factor
       );
     }
+  };
+
+  const applySmoothTransform = (transform: d3.ZoomTransform) => {
+    if (svgRef.current && zoomBehaviorRef.current) {
+      const svg = d3.select(svgRef.current);
+      const zoomBehavior = zoomBehaviorRef.current;
+      svg.interrupt();
+      svg.transition().duration(480).ease(d3.easeCubicInOut).call(
+        (zoomBehavior.transform as any),
+        transform
+      );
+    }
+  };
+
+  const zoomIn = () => {
+    applySmoothScale(1.18);
   };
 
   const zoomOut = () => {
-    if (svgRef.current && zoomBehaviorRef.current) {
-      const svg = d3.select(svgRef.current);
-      const zoomBehavior = zoomBehaviorRef.current;
-      svg.transition().duration(320).ease(d3.easeCubicOut).call(
-        (zoomBehavior.scaleBy as any),
-        0.7
-      );
-    }
+    applySmoothScale(0.84);
   };
 
   const resetZoom = () => {
-    if (svgRef.current && zoomBehaviorRef.current) {
-      const svg = d3.select(svgRef.current);
-      const zoomBehavior = zoomBehaviorRef.current;
-      svg.transition().duration(420).ease(d3.easeCubicOut).call(
-        (zoomBehavior.transform as any),
-        d3.zoomIdentity
-      );
-    }
+    applySmoothTransform(d3.zoomIdentity);
   };
 
   if (loading) {
@@ -605,14 +514,9 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
           <div className="flex flex-col items-center gap-2 text-red-500">
             <Network className="h-8 w-8" />
             <p>{error}</p>
-            <div className="flex items-center gap-2">
-              <Button onClick={fetchGraph} variant="outline" size="sm">
-                Retry
-              </Button>
-              <Button onClick={loadMockGraph} variant="outline" size="sm">
-                Mock PDG
-              </Button>
-            </div>
+            <Button onClick={fetchGraph} variant="outline" size="sm">
+              Retry
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -653,9 +557,6 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
             <Button variant="outline" size="sm" onClick={fetchGraph}>
               <RefreshCw className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" onClick={loadMockGraph}>
-              Mock PDG
-            </Button>
           </div>
         </div>
       </CardHeader>
@@ -691,7 +592,7 @@ export function D3DependencyGraph({ projectRoot, files, onNodeClick, height = 50
             ref={svgRef} 
             width="100%" 
             height={height}
-            className="bg-slate-50"
+            className="bg-[#1f232b]"
           />
           
           {/* Hover Tooltip */}
